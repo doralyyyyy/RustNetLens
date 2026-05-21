@@ -317,6 +317,18 @@ input:focus, select:focus, textarea:focus {
   gap: 10px;
 }
 
+.overview-row strong {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.overview-row span {
+  flex: 0 0 auto;
+}
+
 .timeline-list,
 .frame-list {
   display: grid;
