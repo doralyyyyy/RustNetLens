@@ -28,12 +28,19 @@ pub struct HeaderPair {
     pub value: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 pub struct BodyPreview {
     pub content_type: Option<String>,
+    #[serde(default)]
     pub truncated: bool,
     pub size: u64,
+    #[serde(default)]
+    pub encoding: Option<String>,
+    #[serde(default)]
+    pub pretty: Option<String>,
+    #[serde(default)]
     pub text: Option<String>,
+    #[serde(default)]
     pub base64: Option<String>,
 }
 
@@ -43,10 +50,30 @@ impl BodyPreview {
             content_type: None,
             truncated: false,
             size: 0,
+            encoding: None,
+            pretty: None,
             text: None,
             base64: None,
         }
     }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct TimelineEntry {
+    pub name: String,
+    pub started_at: DateTime<Utc>,
+    pub ended_at: Option<DateTime<Utc>>,
+    pub duration_ms: Option<u64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct WebSocketFramePreview {
+    pub direction: String,
+    pub opcode: String,
+    pub size: u64,
+    pub text: Option<String>,
+    pub base64: Option<String>,
+    pub truncated: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -68,6 +95,10 @@ pub struct CapturedSession {
     pub response_headers: Vec<HeaderPair>,
     pub request_body: BodyPreview,
     pub response_body: BodyPreview,
+    #[serde(default)]
+    pub timeline: Vec<TimelineEntry>,
+    #[serde(default)]
+    pub websocket_frames: Vec<WebSocketFramePreview>,
     pub bytes_up: u64,
     pub bytes_down: u64,
     pub error: Option<String>,
@@ -95,6 +126,8 @@ impl CapturedSession {
             response_headers: Vec::new(),
             request_body: BodyPreview::empty(),
             response_body: BodyPreview::empty(),
+            timeline: Vec::new(),
+            websocket_frames: Vec::new(),
             bytes_up: 0,
             bytes_down: 0,
             error: None,
@@ -260,6 +293,27 @@ pub struct ResponseContext {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CaptureEvent {
     pub session: CapturedSession,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq)]
+pub struct TrafficOverview {
+    pub total_sessions: u64,
+    pub total_bytes_up: u64,
+    pub total_bytes_down: u64,
+    pub average_duration_ms: Option<u64>,
+    pub p95_duration_ms: Option<u64>,
+    pub by_host: Vec<TrafficBucket>,
+    pub by_method: Vec<TrafficBucket>,
+    pub by_status: Vec<TrafficBucket>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct TrafficBucket {
+    pub key: String,
+    pub count: u64,
+    pub bytes_up: u64,
+    pub bytes_down: u64,
+    pub average_duration_ms: Option<u64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

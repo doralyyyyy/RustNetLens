@@ -2,7 +2,7 @@
 mod tests {
     use tempfile::tempdir;
 
-    use crate::capture::redact_header;
+    use crate::capture::{preview_body_with_encoding, redact_header};
     use crate::export::{export_bundle_json, write_export_file};
     use crate::export::{export_sessions_har_like, export_sessions_json};
     use crate::model::{
@@ -16,6 +16,14 @@ mod tests {
         assert_eq!(redact_header("Authorization", "secret"), "<redacted>");
         assert_eq!(redact_header("X-Api-Key", "secret"), "<redacted>");
         assert_eq!(redact_header("Accept", "json"), "json");
+    }
+
+    #[test]
+    fn pretty_prints_json_body() {
+        let preview =
+            preview_body_with_encoding(Some("application/json"), None, br#"{"a":1}"#, 1024);
+        assert_eq!(preview.pretty.as_deref(), Some("{\n  \"a\": 1\n}"));
+        assert_eq!(preview.text.as_deref(), Some("{\"a\":1}"));
     }
 
     #[test]
@@ -97,6 +105,8 @@ mod tests {
             content_type: Some("text/plain".into()),
             truncated: false,
             size: 4,
+            encoding: None,
+            pretty: Some("demo".into()),
             text: Some("demo".into()),
             base64: None,
         };
@@ -161,5 +171,36 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(sessions.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn traffic_overview_aggregates_sessions() {
+        let dir = tempdir().unwrap();
+        let store = SqliteStore::new(dir.path().join("overview.sqlite3"))
+            .await
+            .unwrap();
+        for (host, status, bytes_up, bytes_down) in [
+            ("example.com", Some(200), 10, 20),
+            ("example.com", Some(500), 30, 40),
+            ("api.example.com", Some(200), 50, 60),
+        ] {
+            let mut session = CapturedSession::new(SessionKind::Http);
+            session.state = SessionState::Completed;
+            session.method = Some("GET".into());
+            session.url = Some(format!("http://{host}/demo"));
+            session.host = Some(host.into());
+            session.status = status;
+            session.bytes_up = bytes_up;
+            session.bytes_down = bytes_down;
+            store.insert_session(&session).await.unwrap();
+        }
+        let overview = store.traffic_overview(100).await.unwrap();
+        assert_eq!(overview.total_sessions, 3);
+        assert_eq!(overview.total_bytes_up, 90);
+        assert_eq!(
+            overview.by_host.first().map(|item| item.key.as_str()),
+            Some("example.com")
+        );
+        assert_eq!(overview.by_status.len(), 2);
     }
 }

@@ -5,6 +5,7 @@ fn main() {
             "start_proxy",
             "stop_proxy",
             "list_sessions",
+            "traffic_overview",
             "get_session_detail",
             "clear_sessions",
             "list_rules",

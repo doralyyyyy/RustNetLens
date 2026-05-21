@@ -32,6 +32,7 @@ fn main() {
             commands::start_proxy,
             commands::stop_proxy,
             commands::list_sessions,
+            commands::traffic_overview,
             commands::get_session_detail,
             commands::clear_sessions,
             commands::list_rules,

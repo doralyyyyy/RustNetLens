@@ -11,6 +11,7 @@
     "allow-start-proxy",
     "allow-stop-proxy",
     "allow-list-sessions",
+    "allow-traffic-overview",
     "allow-get-session-detail",
     "allow-clear-sessions",
     "allow-list-rules",

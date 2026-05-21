@@ -90,6 +90,7 @@ async fn proxy_smoke_perf() {
         listen_addr: proxy_addr,
         max_request_body_bytes: 1024 * 1024,
         max_response_body_bytes: 2 * 1024 * 1024,
+        max_websocket_frame_bytes: 64 * 1024,
     };
     let (event_tx, _) = broadcast::channel(32);
     let (shutdown_tx, shutdown_rx) = oneshot::channel();

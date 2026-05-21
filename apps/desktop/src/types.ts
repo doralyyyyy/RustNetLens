@@ -10,8 +10,26 @@ export type BodyPreview = {
   content_type?: string | null;
   truncated: boolean;
   size: number;
+  encoding?: string | null;
+  pretty?: string | null;
   text?: string | null;
   base64?: string | null;
+};
+
+export type TimelineEntry = {
+  name: string;
+  started_at: string;
+  ended_at?: string | null;
+  duration_ms?: number | null;
+};
+
+export type WebSocketFramePreview = {
+  direction: string;
+  opcode: string;
+  size: number;
+  text?: string | null;
+  base64?: string | null;
+  truncated: boolean;
 };
 
 export type CapturedSession = {
@@ -32,6 +50,8 @@ export type CapturedSession = {
   response_headers: HeaderPair[];
   request_body: BodyPreview;
   response_body: BodyPreview;
+  timeline: TimelineEntry[];
+  websocket_frames: WebSocketFramePreview[];
   bytes_up: number;
   bytes_down: number;
   error?: string | null;
@@ -67,6 +87,25 @@ export type ProxyStatus = {
   listen_addr?: string | null;
   started_at?: string | null;
   active_sessions: number;
+};
+
+export type TrafficBucket = {
+  key: string;
+  count: number;
+  bytes_up: number;
+  bytes_down: number;
+  average_duration_ms?: number | null;
+};
+
+export type TrafficOverview = {
+  total_sessions: number;
+  total_bytes_up: number;
+  total_bytes_down: number;
+  average_duration_ms?: number | null;
+  p95_duration_ms?: number | null;
+  by_host: TrafficBucket[];
+  by_method: TrafficBucket[];
+  by_status: TrafficBucket[];
 };
 
 export type Rule = {

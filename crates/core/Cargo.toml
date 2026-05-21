@@ -13,6 +13,7 @@ http.workspace = true
 http-body-util.workspace = true
 hyper.workspace = true
 hyper-util.workspace = true
+ring.workspace = true
 rusqlite.workspace = true
 serde.workspace = true
 serde_json.workspace = true

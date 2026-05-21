@@ -1,7 +1,8 @@
 use chrono::Utc;
 use rustnetlens_core::{
     CapturedSession, ProxyStatus, Rule, RuleEngine, SessionFilter, SessionStore, SessionSummary,
-    export_sessions_json, replay_session as replay_core, write_export_file,
+    TrafficOverview, export_sessions_har_like, export_sessions_json, replay_session as replay_core,
+    write_export_file,
 };
 use tauri::State;
 use uuid::Uuid;
@@ -33,6 +34,18 @@ pub async fn list_sessions(
     state
         .store
         .list_sessions(filter, limit, offset)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn traffic_overview(
+    state: State<'_, AppState>,
+    limit: u32,
+) -> Result<TrafficOverview, String> {
+    state
+        .store
+        .traffic_overview(limit)
         .await
         .map_err(|e| e.to_string())
 }
@@ -116,6 +129,7 @@ pub async fn replay_session(state: State<'_, AppState>, id: String) -> Result<St
 pub async fn export_sessions(
     state: State<'_, AppState>,
     ids: Vec<String>,
+    format: Option<String>,
 ) -> Result<String, String> {
     let parsed = ids
         .iter()
@@ -126,7 +140,17 @@ pub async fn export_sessions(
         .get_sessions_by_ids(&parsed)
         .await
         .map_err(|e| e.to_string())?;
-    let content = export_sessions_json(sessions).map_err(|e| e.to_string())?;
-    let path = write_export_file(&state.export_dir, &content, "json").map_err(|e| e.to_string())?;
+    let format = format.unwrap_or_else(|| "json".into());
+    let (content, suffix) = match format.as_str() {
+        "har" => (
+            export_sessions_har_like(sessions).map_err(|e| e.to_string())?,
+            "har",
+        ),
+        _ => (
+            export_sessions_json(sessions).map_err(|e| e.to_string())?,
+            "json",
+        ),
+    };
+    let path = write_export_file(&state.export_dir, &content, suffix).map_err(|e| e.to_string())?;
     Ok(path.to_string_lossy().to_string())
 }

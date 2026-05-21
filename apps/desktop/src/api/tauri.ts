@@ -1,5 +1,12 @@
 import { invoke } from "@tauri-apps/api/core";
-import type { CapturedSession, ProxyStatus, Rule, SessionFilter, SessionSummary } from "../types";
+import type {
+  CapturedSession,
+  ProxyStatus,
+  Rule,
+  SessionFilter,
+  SessionSummary,
+  TrafficOverview,
+} from "../types";
 
 export const api = {
   proxyStatus: () => invoke<ProxyStatus>("proxy_status"),
@@ -7,11 +14,13 @@ export const api = {
   stopProxy: () => invoke<void>("stop_proxy"),
   listSessions: (filter: SessionFilter, limit = 200, offset = 0) =>
     invoke<SessionSummary[]>("list_sessions", { filter, limit, offset }),
+  trafficOverview: (limit = 500) => invoke<TrafficOverview>("traffic_overview", { limit }),
   getSessionDetail: (id: string) => invoke<CapturedSession>("get_session_detail", { id }),
   clearSessions: () => invoke<void>("clear_sessions"),
   listRules: () => invoke<Rule[]>("list_rules"),
   saveRule: (rule: Rule) => invoke<void>("save_rule", { rule }),
   deleteRule: (id: string) => invoke<void>("delete_rule", { id }),
   replaySession: (id: string) => invoke<string>("replay_session", { id }),
-  exportSessions: (ids: string[]) => invoke<string>("export_sessions", { ids }),
+  exportSessions: (ids: string[], format?: "json" | "har") =>
+    invoke<string>("export_sessions", { ids, format }),
 };

@@ -1,6 +1,7 @@
 use std::net::SocketAddr;
 use std::sync::Arc;
 
+use base64::{Engine as _, engine::general_purpose::STANDARD};
 use bytes::Bytes;
 use chrono::Utc;
 use http::{Method, Request, Response, StatusCode, header};
@@ -11,16 +12,19 @@ use hyper::service::service_fn;
 use hyper::upgrade::Upgraded;
 use hyper_util::rt::TokioIo;
 use reqwest::Client;
-use tokio::io::copy_bidirectional;
+use ring::digest::{SHA1_FOR_LEGACY_USE_ONLY, digest};
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, copy_bidirectional, split};
 use tokio::net::{TcpListener, TcpStream};
-use tokio::sync::{broadcast, oneshot};
+use tokio::sync::{Mutex, broadcast, oneshot};
 use tracing::{error, warn};
 
-use crate::capture::{preview_body, redact_headers};
+use crate::capture::{
+    preview_body_with_encoding, preview_request_body, preview_response_body, redact_headers,
+};
 use crate::error::ProxyError;
 use crate::model::{
     CaptureEvent, CapturedSession, HeaderPair, RequestContext, ResponseContext, SessionKind,
-    SessionState,
+    SessionState, TimelineEntry,
 };
 use crate::rules::{RuleEngine, merge_headers};
 use crate::store::SessionStore;
@@ -30,6 +34,7 @@ pub struct ProxyConfig {
     pub listen_addr: SocketAddr,
     pub max_request_body_bytes: usize,
     pub max_response_body_bytes: usize,
+    pub max_websocket_frame_bytes: usize,
 }
 
 pub struct ProxyServer<S: SessionStore> {
@@ -127,7 +132,13 @@ async fn handle_request<S: SessionStore>(
     event_tx: broadcast::Sender<CaptureEvent>,
 ) -> Response<Full<Bytes>> {
     if req.method() == Method::CONNECT {
-        return match handle_connect(req, config, store, event_tx).await {
+        return match handle_connect(req, store, event_tx).await {
+            Ok(resp) => resp,
+            Err(err) => internal_error(err),
+        };
+    }
+    if is_websocket_upgrade(&req) {
+        return match handle_websocket(req, config, store, event_tx).await {
             Ok(resp) => resp,
             Err(err) => internal_error(err),
         };
@@ -170,7 +181,23 @@ async fn handle_http<S: SessionStore>(
             .map(|p| p.as_str().to_string())
             .unwrap_or_else(|| "/".to_string()),
     );
+    session.timeline.push(TimelineEntry {
+        name: "request_received".into(),
+        started_at: session.started_at,
+        ended_at: Some(session.started_at),
+        duration_ms: Some(0),
+    });
     session.request_headers = headers_to_pairs(req.headers());
+    let request_content_type = req
+        .headers()
+        .get(header::CONTENT_TYPE)
+        .and_then(|v| v.to_str().ok())
+        .map(str::to_string);
+    let request_content_encoding = req
+        .headers()
+        .get(header::CONTENT_ENCODING)
+        .and_then(|v| v.to_str().ok())
+        .map(str::to_string);
     let body_bytes = req
         .body_mut()
         .collect()
@@ -178,12 +205,10 @@ async fn handle_http<S: SessionStore>(
         .map_err(|e| ProxyError::Http(e.to_string()))?
         .to_bytes();
     session.request_headers = redact_headers(&session.request_headers);
-    session.request_body = preview_body(
-        req.headers()
-            .get(header::CONTENT_TYPE)
-            .and_then(|v| v.to_str().ok()),
+    session.request_body = preview_request_body(
+        request_content_type.as_deref(),
+        request_content_encoding.as_deref(),
         &body_bytes,
-        config.max_request_body_bytes,
     );
     session.bytes_up = body_bytes.len() as u64;
 
@@ -209,15 +234,15 @@ async fn handle_http<S: SessionStore>(
         session.state = SessionState::Mocked;
         session.status = Some(status);
         session.response_headers = headers.clone();
-        session.response_body = preview_body(
-            headers
-                .iter()
-                .find(|h| h.name.eq_ignore_ascii_case("content-type"))
-                .map(|h| h.value.as_str()),
-            body.as_bytes(),
-            config.max_response_body_bytes,
-        );
+        session.response_body =
+            preview_body_with_headers(&headers, body.as_bytes(), config.max_response_body_bytes);
         session.bytes_down = body.len() as u64;
+        session.timeline.push(TimelineEntry {
+            name: "completed".into(),
+            started_at: Utc::now(),
+            ended_at: Some(Utc::now()),
+            duration_ms: Some(0),
+        });
         session.finish(SessionState::Mocked);
         store
             .insert_session(&session)
@@ -276,15 +301,29 @@ async fn handle_http<S: SessionStore>(
         .map_err(|e| ProxyError::Http(e.to_string()))?;
     session.status = Some(status);
     session.response_headers = response_headers.clone();
-    session.response_body = preview_body(
-        response_headers
-            .iter()
-            .find(|h| h.name.eq_ignore_ascii_case("content-type"))
-            .map(|h| h.value.as_str()),
-        &body,
-        config.max_response_body_bytes,
-    );
+    let response_content_type = response_headers
+        .iter()
+        .find(|h| h.name.eq_ignore_ascii_case("content-type"))
+        .map(|h| h.value.as_str());
+    let response_content_encoding = response_headers
+        .iter()
+        .find(|h| h.name.eq_ignore_ascii_case("content-encoding"))
+        .map(|h| h.value.as_str());
+    session.response_body =
+        preview_response_body(response_content_type, response_content_encoding, &body);
     session.bytes_down = body.len() as u64;
+    session.timeline.push(TimelineEntry {
+        name: "first_byte".into(),
+        started_at: Utc::now(),
+        ended_at: Some(Utc::now()),
+        duration_ms: Some(0),
+    });
+    session.timeline.push(TimelineEntry {
+        name: "completed".into(),
+        started_at: Utc::now(),
+        ended_at: Some(Utc::now()),
+        duration_ms: Some(0),
+    });
     session.finish(SessionState::Completed);
     store
         .insert_session(&session)
@@ -302,7 +341,6 @@ async fn handle_http<S: SessionStore>(
 
 async fn handle_connect<S: SessionStore>(
     req: Request<Incoming>,
-    _config: ProxyConfig,
     store: Arc<S>,
     event_tx: broadcast::Sender<CaptureEvent>,
 ) -> Result<Response<Full<Bytes>>, ProxyError> {
@@ -325,6 +363,12 @@ async fn handle_connect<S: SessionStore>(
     session.port = Some(port);
     session.url = Some(format!("{host}:{port}"));
     session.state = SessionState::Tunneling;
+    session.timeline.push(TimelineEntry {
+        name: "connect".into(),
+        started_at: session.started_at,
+        ended_at: Some(session.started_at),
+        duration_ms: Some(0),
+    });
 
     let upgrade = hyper::upgrade::on(req);
     let target = format!("{host}:{port}");
@@ -339,6 +383,12 @@ async fn handle_connect<S: SessionStore>(
         }
     });
 
+    session.timeline.push(TimelineEntry {
+        name: "completed".into(),
+        started_at: Utc::now(),
+        ended_at: Some(Utc::now()),
+        duration_ms: Some(0),
+    });
     session.finish(SessionState::Completed);
     store
         .insert_session(&session)
@@ -349,6 +399,280 @@ async fn handle_connect<S: SessionStore>(
         .status(StatusCode::OK)
         .body(Full::from(Bytes::new()))
         .map_err(|e| ProxyError::Http(e.to_string()))?)
+}
+
+async fn handle_websocket<S: SessionStore>(
+    req: Request<Incoming>,
+    config: ProxyConfig,
+    store: Arc<S>,
+    event_tx: broadcast::Sender<CaptureEvent>,
+) -> Result<Response<Full<Bytes>>, ProxyError> {
+    let target_uri = websocket_target_uri(&req)?;
+    if target_uri.scheme_str() != Some("ws") {
+        return Err(ProxyError::InvalidRequest(
+            "only cleartext ws:// capture is supported; wss:// remains a CONNECT tunnel".into(),
+        ));
+    }
+    let host = target_uri
+        .host()
+        .ok_or_else(|| ProxyError::InvalidRequest("missing websocket host".into()))?
+        .to_string();
+    let port = target_uri.port_u16().unwrap_or(80);
+
+    let mut session = CapturedSession::new(SessionKind::WebSocket);
+    session.started_at = Utc::now();
+    session.method = Some("GET".into());
+    session.url = Some(target_uri.to_string());
+    session.scheme = Some("ws".into());
+    session.host = Some(host.clone());
+    session.port = Some(port);
+    session.path = target_uri
+        .path_and_query()
+        .map(|value| value.as_str().to_string())
+        .or_else(|| Some("/".into()));
+    session.request_headers = redact_headers(&headers_to_pairs(req.headers()));
+    session.status = Some(StatusCode::SWITCHING_PROTOCOLS.as_u16());
+    session.timeline.push(TimelineEntry {
+        name: "upgrade".into(),
+        started_at: session.started_at,
+        ended_at: Some(session.started_at),
+        duration_ms: Some(0),
+    });
+
+    let response = websocket_upgrade_response(&req)?;
+    let upgrade = hyper::upgrade::on(req);
+    let target = format!("{host}:{port}");
+    let session = Arc::new(Mutex::new(session));
+    let session_task = session.clone();
+    let store_task = store.clone();
+    let event_task = event_tx.clone();
+    tokio::spawn(async move {
+        match upgrade.await {
+            Ok(upgraded) => {
+                if let Err(err) = relay_websocket(
+                    upgraded,
+                    target,
+                    session_task,
+                    config.max_websocket_frame_bytes,
+                    store_task,
+                    event_task,
+                )
+                .await
+                {
+                    warn!(error = %err, "websocket tunnel failed");
+                }
+            }
+            Err(err) => warn!(error = %err, "websocket upgrade failed"),
+        }
+    });
+    Ok(response)
+}
+
+async fn relay_websocket<S: SessionStore>(
+    upgraded: Upgraded,
+    target: String,
+    session: Arc<Mutex<CapturedSession>>,
+    max_frame_bytes: usize,
+    store: Arc<S>,
+    event_tx: broadcast::Sender<CaptureEvent>,
+) -> Result<(), ProxyError> {
+    let upstream =
+        TcpStream::connect(&target)
+            .await
+            .map_err(|e| ProxyError::UpstreamConnectFailed {
+                target: target.clone(),
+                source: e,
+            })?;
+    let client_io = TokioIo::new(upgraded);
+    let (mut client_read, mut client_write) = split(client_io);
+    let (mut upstream_read, mut upstream_write) = split(upstream);
+
+    let client_task = relay_websocket_frames(
+        &mut client_read,
+        &mut upstream_write,
+        "client",
+        max_frame_bytes,
+        session.clone(),
+    );
+    let upstream_task = relay_websocket_frames(
+        &mut upstream_read,
+        &mut client_write,
+        "upstream",
+        max_frame_bytes,
+        session.clone(),
+    );
+    let (client_result, upstream_result) = tokio::join!(client_task, upstream_task);
+
+    let session_snapshot = {
+        let mut session = session.lock().await;
+        if let Err(err) = &client_result {
+            session.error = Some(err.to_string());
+            session.finish(SessionState::Failed);
+        } else if let Err(err) = &upstream_result {
+            session.error = Some(err.to_string());
+            session.finish(SessionState::Failed);
+        } else {
+            session.finish(SessionState::Completed);
+        }
+        session.timeline.push(TimelineEntry {
+            name: "completed".into(),
+            started_at: Utc::now(),
+            ended_at: Some(Utc::now()),
+            duration_ms: Some(0),
+        });
+        session.clone()
+    };
+    store
+        .insert_session(&session_snapshot)
+        .await
+        .map_err(|e| ProxyError::Store(e.to_string()))?;
+    let _ = event_tx.send(CaptureEvent {
+        session: session_snapshot.clone(),
+    });
+    if let Err(err) = client_result {
+        return Err(err);
+    }
+    if let Err(err) = upstream_result {
+        return Err(err);
+    }
+    Ok(())
+}
+
+async fn relay_websocket_frames<R, W>(
+    reader: &mut R,
+    writer: &mut W,
+    direction: &'static str,
+    max_frame_bytes: usize,
+    session: Arc<Mutex<CapturedSession>>,
+) -> Result<(), ProxyError>
+where
+    R: AsyncRead + Unpin,
+    W: AsyncWrite + Unpin,
+{
+    loop {
+        let Some(frame) = read_websocket_frame(reader).await? else {
+            break;
+        };
+        let preview = crate::capture::preview_websocket_frame(
+            direction,
+            frame.opcode_name(),
+            &frame.payload,
+            max_frame_bytes,
+        );
+        {
+            let mut session = session.lock().await;
+            if session.timeline.len() == 1 {
+                session.timeline.push(TimelineEntry {
+                    name: "first_frame".into(),
+                    started_at: Utc::now(),
+                    ended_at: Some(Utc::now()),
+                    duration_ms: Some(0),
+                });
+            }
+            session.websocket_frames.push(preview);
+        }
+        writer
+            .write_all(&frame.raw)
+            .await
+            .map_err(|e| ProxyError::Http(e.to_string()))?;
+        writer
+            .flush()
+            .await
+            .map_err(|e| ProxyError::Http(e.to_string()))?;
+        if frame.opcode == 0x8 {
+            break;
+        }
+    }
+    Ok(())
+}
+
+struct WebSocketFrame {
+    opcode: u8,
+    payload: Vec<u8>,
+    raw: Vec<u8>,
+}
+
+impl WebSocketFrame {
+    fn opcode_name(&self) -> &'static str {
+        match self.opcode {
+            0x1 => "text",
+            0x2 => "binary",
+            0x8 => "close",
+            0x9 => "ping",
+            0xA => "pong",
+            _ => "frame",
+        }
+    }
+}
+
+async fn read_websocket_frame<R>(reader: &mut R) -> Result<Option<WebSocketFrame>, ProxyError>
+where
+    R: AsyncRead + Unpin,
+{
+    let mut header = [0u8; 2];
+    match reader.read_exact(&mut header).await {
+        Ok(_) => {}
+        Err(err) if err.kind() == std::io::ErrorKind::UnexpectedEof => return Ok(None),
+        Err(err) => return Err(ProxyError::Http(err.to_string())),
+    }
+
+    let fin = header[0] & 0x80 != 0;
+    let opcode = header[0] & 0x0F;
+    let masked = header[1] & 0x80 != 0;
+    let mut len = (header[1] & 0x7F) as u64;
+    let mut raw = header.to_vec();
+    if len == 126 {
+        let mut extended = [0u8; 2];
+        reader
+            .read_exact(&mut extended)
+            .await
+            .map_err(|e| ProxyError::Http(e.to_string()))?;
+        raw.extend_from_slice(&extended);
+        len = u16::from_be_bytes(extended) as u64;
+    } else if len == 127 {
+        let mut extended = [0u8; 8];
+        reader
+            .read_exact(&mut extended)
+            .await
+            .map_err(|e| ProxyError::Http(e.to_string()))?;
+        raw.extend_from_slice(&extended);
+        len = u64::from_be_bytes(extended);
+    }
+
+    let mut mask_key = [0u8; 4];
+    if masked {
+        reader
+            .read_exact(&mut mask_key)
+            .await
+            .map_err(|e| ProxyError::Http(e.to_string()))?;
+        raw.extend_from_slice(&mask_key);
+    }
+
+    let mut payload = vec![0u8; len as usize];
+    if !payload.is_empty() {
+        reader
+            .read_exact(&mut payload)
+            .await
+            .map_err(|e| ProxyError::Http(e.to_string()))?;
+    }
+    raw.extend_from_slice(&payload);
+
+    let payload = if masked {
+        let mut decoded = payload;
+        for (index, byte) in decoded.iter_mut().enumerate() {
+            *byte ^= mask_key[index % 4];
+        }
+        decoded
+    } else {
+        payload
+    };
+
+    let _ = fin;
+    Ok(Some(WebSocketFrame {
+        opcode,
+        payload,
+        raw,
+    }))
 }
 
 async fn tunnel(upgraded: Upgraded, target: &str) -> Result<(), ProxyError> {
@@ -364,6 +688,74 @@ async fn tunnel(upgraded: Upgraded, target: &str) -> Result<(), ProxyError> {
         .await
         .map_err(|e| ProxyError::Http(e.to_string()))?;
     Ok(())
+}
+
+fn is_websocket_upgrade(req: &Request<Incoming>) -> bool {
+    req.method() == Method::GET
+        && req
+            .headers()
+            .get(header::UPGRADE)
+            .and_then(|value| value.to_str().ok())
+            .map(|value| value.eq_ignore_ascii_case("websocket"))
+            .unwrap_or(false)
+        && req
+            .headers()
+            .get(header::CONNECTION)
+            .and_then(|value| value.to_str().ok())
+            .map(|value| {
+                value
+                    .split(',')
+                    .any(|part| part.trim().eq_ignore_ascii_case("upgrade"))
+            })
+            .unwrap_or(false)
+}
+
+fn websocket_target_uri(req: &Request<Incoming>) -> Result<http::Uri, ProxyError> {
+    if req.uri().scheme().is_some() && req.uri().authority().is_some() {
+        return req
+            .uri()
+            .to_string()
+            .parse()
+            .map_err(|e| ProxyError::InvalidRequest(format!("invalid websocket uri: {e}")));
+    }
+    let host = req
+        .headers()
+        .get(header::HOST)
+        .and_then(|value| value.to_str().ok())
+        .ok_or_else(|| ProxyError::InvalidRequest("missing websocket host".into()))?;
+    let path = req
+        .uri()
+        .path_and_query()
+        .map(|value| value.as_str())
+        .unwrap_or("/");
+    format!("ws://{host}{path}")
+        .parse()
+        .map_err(|e| ProxyError::InvalidRequest(format!("invalid websocket uri: {e}")))
+}
+
+fn websocket_upgrade_response(
+    req: &Request<Incoming>,
+) -> Result<Response<Full<Bytes>>, ProxyError> {
+    let key = req
+        .headers()
+        .get(header::SEC_WEBSOCKET_KEY)
+        .and_then(|value| value.to_str().ok())
+        .ok_or_else(|| ProxyError::InvalidRequest("missing Sec-WebSocket-Key".into()))?;
+    let mut accept_seed = Vec::with_capacity(key.len() + 36);
+    accept_seed.extend_from_slice(key.as_bytes());
+    accept_seed.extend_from_slice(b"258EAFA5-E914-47DA-95CA-C5AB0DC85B11");
+    let accept = STANDARD.encode(digest(&SHA1_FOR_LEGACY_USE_ONLY, &accept_seed).as_ref());
+    let mut builder = Response::builder()
+        .status(StatusCode::SWITCHING_PROTOCOLS)
+        .header(header::CONNECTION, "Upgrade")
+        .header(header::UPGRADE, "websocket")
+        .header(header::SEC_WEBSOCKET_ACCEPT, accept);
+    if let Some(protocol) = req.headers().get(header::SEC_WEBSOCKET_PROTOCOL) {
+        builder = builder.header(header::SEC_WEBSOCKET_PROTOCOL, protocol);
+    }
+    builder
+        .body(Full::from(Bytes::new()))
+        .map_err(|e| ProxyError::Http(e.to_string()))
 }
 
 fn parse_connect_target(target: &str) -> Result<(String, u16), ProxyError> {
@@ -428,4 +820,20 @@ fn internal_error(err: ProxyError) -> Response<Full<Bytes>> {
 fn parse_host_port(host: Option<&http::HeaderValue>) -> Option<u16> {
     host.and_then(|value| value.to_str().ok())
         .and_then(|host| host.rsplit(':').next()?.parse::<u16>().ok())
+}
+
+fn preview_body_with_headers(
+    headers: &[HeaderPair],
+    bytes: &[u8],
+    max_bytes: usize,
+) -> crate::model::BodyPreview {
+    let content_type = headers
+        .iter()
+        .find(|header| header.name.eq_ignore_ascii_case("content-type"))
+        .map(|header| header.value.as_str());
+    let content_encoding = headers
+        .iter()
+        .find(|header| header.name.eq_ignore_ascii_case("content-encoding"))
+        .map(|header| header.value.as_str());
+    preview_body_with_encoding(content_type, content_encoding, bytes, max_bytes)
 }

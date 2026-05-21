@@ -175,6 +175,62 @@ input:focus, textarea:focus {
   padding: 14px;
 }
 
+.overview-panel {
+  display: grid;
+  gap: 14px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.overview-metrics {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 8px;
+}
+
+.overview-metrics div,
+.overview-list,
+.timeline-item,
+.frame-item {
+  padding: 12px;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(142, 206, 185, 0.1);
+}
+
+.overview-metrics span,
+.overview-list h4 {
+  display: block;
+  color: var(--muted);
+  font-size: 12px;
+  margin-bottom: 6px;
+}
+
+.overview-columns {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+}
+
+.overview-row,
+.timeline-item .frame-meta {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.timeline-list,
+.frame-list {
+  display: grid;
+  gap: 8px;
+}
+
+.frame-item pre {
+  margin-top: 10px;
+}
+
 .filters {
   display: grid;
   grid-template-columns: 1.2fr 0.55fr 0.8fr 0.55fr auto auto auto;
@@ -427,6 +483,10 @@ pre {
 @media (max-width: 1100px) {
   body { min-width: 0; }
   .toolbar, .main-grid {
+    grid-template-columns: 1fr;
+  }
+  .overview-metrics,
+  .overview-columns {
     grid-template-columns: 1fr;
   }
   .filters {

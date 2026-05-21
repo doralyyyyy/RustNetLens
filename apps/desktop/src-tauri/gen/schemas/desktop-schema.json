@@ -411,6 +411,12 @@
           "markdownDescription": "Enables the stop_proxy command without any pre-configured scope."
         },
         {
+          "description": "Enables the traffic_overview command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-traffic-overview",
+          "markdownDescription": "Enables the traffic_overview command without any pre-configured scope."
+        },
+        {
           "description": "Denies the clear_sessions command without any pre-configured scope.",
           "type": "string",
           "const": "deny-clear-sessions",
@@ -475,6 +481,12 @@
           "type": "string",
           "const": "deny-stop-proxy",
           "markdownDescription": "Denies the stop_proxy command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the traffic_overview command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-traffic-overview",
+          "markdownDescription": "Denies the traffic_overview command without any pre-configured scope."
         },
         {
           "description": "Default core plugins set.\n#### This default permission set includes:\n\n- `core:path:default`\n- `core:event:default`\n- `core:window:default`\n- `core:webview:default`\n- `core:app:default`\n- `core:image:default`\n- `core:resources:default`\n- `core:menu:default`\n- `core:tray:default`",

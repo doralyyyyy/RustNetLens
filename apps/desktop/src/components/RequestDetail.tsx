@@ -21,14 +21,54 @@ function HeaderList({ headers }: { headers: HeaderPair[] }) {
 }
 
 function BodyBlock({ title, body }: { title: string; body: CapturedSession["request_body"] }) {
-  const content = body.text ?? (body.base64 ? `[base64] ${body.base64}` : "");
+  const content = body.pretty ?? body.text ?? (body.base64 ? `[base64] ${body.base64}` : "");
   return (
     <section className="body-block">
       <h4>{title}</h4>
       <p className="muted">
-        {body.content_type ?? "unknown"} · {body.size} bytes {body.truncated ? "· truncated" : ""}
+        {body.content_type ?? "unknown"} {body.encoding ? `· ${body.encoding}` : ""} · {body.size} bytes
+        {body.truncated ? " · truncated" : ""}
       </p>
       <pre>{content || "No body"}</pre>
+    </section>
+  );
+}
+
+function TimelineBlock({ timeline }: { timeline: CapturedSession["timeline"] }) {
+  return (
+    <section className="body-block">
+      <h4>Timeline</h4>
+      <div className="timeline-list">
+        {timeline.map((entry) => (
+          <div className="timeline-item" key={`${entry.name}-${entry.started_at}`}>
+            <strong>{entry.name}</strong>
+            <span>{entry.duration_ms == null ? "-" : `${entry.duration_ms} ms`}</span>
+          </div>
+        ))}
+        {timeline.length === 0 && <p className="muted">No timeline captured.</p>}
+      </div>
+    </section>
+  );
+}
+
+function WebSocketFramesBlock({ frames }: { frames: CapturedSession["websocket_frames"] }) {
+  return (
+    <section className="body-block">
+      <h4>WebSocket Frames</h4>
+      <div className="frame-list">
+        {frames.map((frame, index) => (
+          <div className="frame-item" key={`${frame.direction}-${frame.opcode}-${index}`}>
+            <div className="frame-meta">
+              <strong>{frame.direction}</strong>
+              <span>
+                {frame.opcode} · {frame.size} bytes
+              </span>
+            </div>
+            <pre>{frame.text ?? (frame.base64 ? `[base64] ${frame.base64}` : "binary")}</pre>
+          </div>
+        ))}
+        {frames.length === 0 && <p className="muted">No websocket frames captured.</p>}
+      </div>
     </section>
   );
 }
@@ -38,7 +78,7 @@ export function RequestDetail({ session, onReplay, onExport }: Props) {
     return (
       <aside className="detail empty-detail">
         <h2>Request Detail</h2>
-        <p>Select a captured request to inspect headers, bodies, raw JSON and replay controls.</p>
+        <p>Select a captured request to inspect headers, bodies, timeline and replay controls.</p>
       </aside>
     );
   }
@@ -48,11 +88,17 @@ export function RequestDetail({ session, onReplay, onExport }: Props) {
     <aside className="detail">
       <div className="detail-header">
         <div>
-          <h2>{session.method ?? session.kind} {session.url ?? session.host}</h2>
-          <p>{session.state} · {session.duration_ms ?? "-"} ms · status {session.status ?? "-"}</p>
+          <h2>
+            {session.method ?? session.kind} {session.url ?? session.host}
+          </h2>
+          <p>
+            {session.state} · {session.duration_ms ?? "-"} ms · status {session.status ?? "-"}
+          </p>
         </div>
         <div className="detail-actions">
-          <button disabled={isConnect} onClick={onReplay}>Replay</button>
+          <button disabled={isConnect} onClick={onReplay}>
+            Replay
+          </button>
           <button onClick={onExport}>Export Selected</button>
         </div>
       </div>
@@ -64,12 +110,30 @@ export function RequestDetail({ session, onReplay, onExport }: Props) {
       )}
 
       <section className="overview-grid">
-        <div><span>Host</span><strong>{session.host ?? "-"}</strong></div>
-        <div><span>Port</span><strong>{session.port ?? "-"}</strong></div>
-        <div><span>Bytes Up</span><strong>{session.bytes_up}</strong></div>
-        <div><span>Bytes Down</span><strong>{session.bytes_down}</strong></div>
-        <div><span>Rule Hits</span><strong>{session.matched_rule_ids.join(", ") || "-"}</strong></div>
-        <div><span>Error</span><strong>{session.error ?? "-"}</strong></div>
+        <div>
+          <span>Host</span>
+          <strong>{session.host ?? "-"}</strong>
+        </div>
+        <div>
+          <span>Port</span>
+          <strong>{session.port ?? "-"}</strong>
+        </div>
+        <div>
+          <span>Bytes Up</span>
+          <strong>{session.bytes_up}</strong>
+        </div>
+        <div>
+          <span>Bytes Down</span>
+          <strong>{session.bytes_down}</strong>
+        </div>
+        <div>
+          <span>Rule Hits</span>
+          <strong>{session.matched_rule_ids.join(", ") || "-"}</strong>
+        </div>
+        <div>
+          <span>Error</span>
+          <strong>{session.error ?? "-"}</strong>
+        </div>
       </section>
 
       <div className="detail-columns">
@@ -85,6 +149,8 @@ export function RequestDetail({ session, onReplay, onExport }: Props) {
 
       <BodyBlock title="Request Body" body={session.request_body} />
       <BodyBlock title="Response Body" body={session.response_body} />
+      <TimelineBlock timeline={session.timeline} />
+      {session.kind === "WebSocket" && <WebSocketFramesBlock frames={session.websocket_frames} />}
 
       <section className="body-block">
         <h4>Raw JSON</h4>

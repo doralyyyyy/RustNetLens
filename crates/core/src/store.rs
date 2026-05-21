@@ -3,11 +3,13 @@ use std::sync::{Arc, Mutex};
 
 use chrono::{DateTime, Utc};
 use rusqlite::{Connection, OptionalExtension, Row, params};
+use std::collections::BTreeMap;
 use uuid::Uuid;
 
 use crate::error::StoreError;
 use crate::model::{
     CapturedSession, Rule, SessionFilter, SessionId, SessionKind, SessionState, SessionSummary,
+    TrafficBucket, TrafficOverview,
 };
 
 #[async_trait::async_trait]
@@ -25,6 +27,7 @@ pub trait SessionStore: Send + Sync + 'static {
         &self,
         ids: &[SessionId],
     ) -> Result<Vec<CapturedSession>, StoreError>;
+    async fn traffic_overview(&self, limit: u32) -> Result<TrafficOverview, StoreError>;
     async fn clear_sessions(&self) -> Result<(), StoreError>;
 }
 
@@ -136,6 +139,10 @@ impl SessionStore for SqliteStore {
             }
             Ok(out)
         })
+    }
+
+    async fn traffic_overview(&self, limit: u32) -> Result<TrafficOverview, StoreError> {
+        self.with_conn(move |conn| load_traffic_overview(conn, limit))
     }
 
     async fn clear_sessions(&self) -> Result<(), StoreError> {
@@ -345,7 +352,7 @@ fn load_session(conn: &Connection, id: SessionId) -> Result<Option<CapturedSessi
     };
     let details = conn
         .query_row(
-            "SELECT request_headers_json, response_headers_json, request_body_json, response_body_json FROM session_details WHERE session_id = ?1",
+            "SELECT raw_json, request_headers_json, response_headers_json, request_body_json, response_body_json FROM session_details WHERE session_id = ?1",
             params![id.clone()],
             |row| {
                 Ok((
@@ -353,47 +360,75 @@ fn load_session(conn: &Connection, id: SessionId) -> Result<Option<CapturedSessi
                     row.get::<_, String>(1)?,
                     row.get::<_, String>(2)?,
                     row.get::<_, String>(3)?,
+                    row.get::<_, String>(4)?,
                 ))
             },
         )
         .optional()
         .map_err(db_err)?;
-    let (request_headers_json, response_headers_json, request_body_json, response_body_json) =
-        details.unwrap_or_else(|| ("[]".into(), "[]".into(), "{}".into(), "{}".into()));
-    let session = CapturedSession {
-        id: Uuid::parse_str(&id).map_err(|e| StoreError::Serialization(e.to_string()))?,
-        kind: parse_kind(&kind)?,
-        state: parse_state(&state)?,
-        started_at: DateTime::parse_from_rfc3339(&started_at)
+    let (
+        raw_json,
+        request_headers_json,
+        response_headers_json,
+        request_body_json,
+        response_body_json,
+    ) = details.unwrap_or_else(|| {
+        (
+            String::new(),
+            "[]".into(),
+            "[]".into(),
+            "{}".into(),
+            "{}".into(),
+        )
+    });
+    let session = if !raw_json.is_empty() {
+        serde_json::from_str::<CapturedSession>(&raw_json)
             .map_err(|e| StoreError::Serialization(e.to_string()))?
-            .with_timezone(&Utc),
-        ended_at: ended_at
-            .map(|v| {
-                DateTime::parse_from_rfc3339(&v)
-                    .map(|dt| dt.with_timezone(&Utc))
-                    .map_err(|e| StoreError::Serialization(e.to_string()))
-            })
-            .transpose()?,
-        duration_ms: duration_ms.map(|v| v as u64),
-        method,
-        url,
-        scheme,
-        host,
-        port: port.map(|v| v as u16),
-        path,
-        status: status.map(|v| v as u16),
-        request_headers: serde_json::from_str(&request_headers_json)
-            .map_err(|e| StoreError::Serialization(e.to_string()))?,
-        response_headers: serde_json::from_str(&response_headers_json)
-            .map_err(|e| StoreError::Serialization(e.to_string()))?,
-        request_body: serde_json::from_str(&request_body_json)
-            .map_err(|e| StoreError::Serialization(e.to_string()))?,
-        response_body: serde_json::from_str(&response_body_json)
-            .map_err(|e| StoreError::Serialization(e.to_string()))?,
-        bytes_up: bytes_up.max(0) as u64,
-        bytes_down: bytes_down.max(0) as u64,
-        error,
-        matched_rule_ids: serde_json::from_str(&matched).unwrap_or_default(),
+    } else {
+        let session = CapturedSession {
+            id: Uuid::parse_str(&id).map_err(|e| StoreError::Serialization(e.to_string()))?,
+            kind: parse_kind(&kind)?,
+            state: parse_state(&state)?,
+            started_at: DateTime::parse_from_rfc3339(&started_at)
+                .map_err(|e| StoreError::Serialization(e.to_string()))?
+                .with_timezone(&Utc),
+            ended_at: ended_at
+                .map(|v| {
+                    DateTime::parse_from_rfc3339(&v)
+                        .map(|dt| dt.with_timezone(&Utc))
+                        .map_err(|e| StoreError::Serialization(e.to_string()))
+                })
+                .transpose()?,
+            duration_ms: duration_ms.map(|v| v as u64),
+            method,
+            url,
+            scheme,
+            host,
+            port: port.map(|v| v as u16),
+            path,
+            status: status.map(|v| v as u16),
+            request_headers: vec![],
+            response_headers: vec![],
+            request_body: Default::default(),
+            response_body: Default::default(),
+            timeline: vec![],
+            websocket_frames: vec![],
+            bytes_up: bytes_up.max(0) as u64,
+            bytes_down: bytes_down.max(0) as u64,
+            error,
+            matched_rule_ids: serde_json::from_str(&matched).unwrap_or_default(),
+        };
+        CapturedSession {
+            request_headers: serde_json::from_str(&request_headers_json)
+                .map_err(|e| StoreError::Serialization(e.to_string()))?,
+            response_headers: serde_json::from_str(&response_headers_json)
+                .map_err(|e| StoreError::Serialization(e.to_string()))?,
+            request_body: serde_json::from_str(&request_body_json)
+                .map_err(|e| StoreError::Serialization(e.to_string()))?,
+            response_body: serde_json::from_str(&response_body_json)
+                .map_err(|e| StoreError::Serialization(e.to_string()))?,
+            ..session
+        }
     };
     Ok(Some(session))
 }
@@ -486,6 +521,92 @@ fn read_summary(
         row.get(10)?,
         row.get(11)?,
     ))
+}
+
+fn load_traffic_overview(conn: &Connection, limit: u32) -> Result<TrafficOverview, StoreError> {
+    let sessions = load_sessions(conn, SessionFilter::default(), limit, 0)?;
+    let total_sessions = sessions.len() as u64;
+    let total_bytes_up = sessions.iter().map(|session| session.bytes_up).sum();
+    let total_bytes_down = sessions.iter().map(|session| session.bytes_down).sum();
+    let mut durations = sessions
+        .iter()
+        .filter_map(|session| session.duration_ms)
+        .collect::<Vec<_>>();
+    durations.sort_unstable();
+    let average_duration_ms = average_u64(&durations);
+    let p95_duration_ms = percentile_u64(&durations, 95);
+    Ok(TrafficOverview {
+        total_sessions,
+        total_bytes_up,
+        total_bytes_down,
+        average_duration_ms,
+        p95_duration_ms,
+        by_host: buckets_by(&sessions, |session| {
+            session.host.clone().unwrap_or_else(|| "-".into())
+        }),
+        by_method: buckets_by(&sessions, |session| {
+            session.method.clone().unwrap_or_else(|| "-".into())
+        }),
+        by_status: buckets_by(&sessions, |session| {
+            session
+                .status
+                .map(|status| status.to_string())
+                .unwrap_or_else(|| "-".into())
+        }),
+    })
+}
+
+fn buckets_by<F>(sessions: &[SessionSummary], key_for: F) -> Vec<TrafficBucket>
+where
+    F: Fn(&SessionSummary) -> String,
+{
+    #[derive(Default)]
+    struct Accumulator {
+        count: u64,
+        bytes_up: u64,
+        bytes_down: u64,
+        durations: Vec<u64>,
+    }
+
+    let mut map = BTreeMap::<String, Accumulator>::new();
+    for session in sessions {
+        let entry = map.entry(key_for(session)).or_default();
+        entry.count += 1;
+        entry.bytes_up += session.bytes_up;
+        entry.bytes_down += session.bytes_down;
+        if let Some(duration) = session.duration_ms {
+            entry.durations.push(duration);
+        }
+    }
+
+    let mut buckets = map
+        .into_iter()
+        .map(|(key, acc)| TrafficBucket {
+            key,
+            count: acc.count,
+            bytes_up: acc.bytes_up,
+            bytes_down: acc.bytes_down,
+            average_duration_ms: average_u64(&acc.durations),
+        })
+        .collect::<Vec<_>>();
+    buckets.sort_by(|a, b| b.count.cmp(&a.count).then(a.key.cmp(&b.key)));
+    buckets.truncate(12);
+    buckets
+}
+
+fn average_u64(values: &[u64]) -> Option<u64> {
+    if values.is_empty() {
+        return None;
+    }
+    Some(values.iter().sum::<u64>() / values.len() as u64)
+}
+
+fn percentile_u64(values: &[u64], percentile: usize) -> Option<u64> {
+    if values.is_empty() {
+        return None;
+    }
+    let index = ((values.len() - 1) * percentile).div_ceil(100);
+    values.get(index).copied()
 }
 
 fn session_matches_filter(summary: &SessionSummary, filter: &SessionFilter) -> bool {
