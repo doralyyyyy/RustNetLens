@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-save-rule"
+description = "Enables the save_rule command without any pre-configured scope."
+commands.allow = ["save_rule"]
+
+[[permission]]
+identifier = "deny-save-rule"
+description = "Denies the save_rule command without any pre-configured scope."
+commands.deny = ["save_rule"]

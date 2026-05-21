@@ -1,0 +1,38 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "RustNetLens",
+  "version": "0.1.0",
+  "identifier": "com.rustnetlens.app",
+  "build": {
+    "beforeDevCommand": {
+      "cwd": "..",
+      "script": "npm run dev",
+      "wait": false
+    },
+    "beforeBuildCommand": {
+      "cwd": "..",
+      "script": "npm run build"
+    },
+    "devUrl": "http://localhost:1420",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "RustNetLens",
+        "width": 1280,
+        "height": 820,
+        "minWidth": 980,
+        "minHeight": 640
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "icon": []
+  }
+}

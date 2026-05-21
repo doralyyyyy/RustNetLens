@@ -1,0 +1,22 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "Default desktop permissions for RustNetLens",
+  "windows": ["main"],
+  "permissions": [
+    "core:default",
+    "core:event:default",
+    "opener:default",
+    "allow-proxy-status",
+    "allow-start-proxy",
+    "allow-stop-proxy",
+    "allow-list-sessions",
+    "allow-get-session-detail",
+    "allow-clear-sessions",
+    "allow-list-rules",
+    "allow-save-rule",
+    "allow-delete-rule",
+    "allow-replay-session",
+    "allow-export-sessions"
+  ]
+}
