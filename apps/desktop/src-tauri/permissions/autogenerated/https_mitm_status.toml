@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-https-mitm-status"
+description = "Enables the https_mitm_status command without any pre-configured scope."
+commands.allow = ["https_mitm_status"]
+
+[[permission]]
+identifier = "deny-https-mitm-status"
+description = "Denies the https_mitm_status command without any pre-configured scope."
+commands.deny = ["https_mitm_status"]

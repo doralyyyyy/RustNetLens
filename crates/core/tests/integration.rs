@@ -13,13 +13,17 @@ use hyper::service::service_fn;
 use hyper_util::rt::TokioIo;
 use reqwest::{Client, Proxy};
 use rustnetlens_core::{
-    HeaderPair, ProxyConfig, ProxyServer, Rule, RuleAction, RuleEngine, SessionKind, SessionState,
-    SessionStore, SqliteStore,
+    HeaderPair, HttpsMitmState, ProxyConfig, ProxyServer, Rule, RuleAction, RuleEngine,
+    SessionKind, SessionState, SessionStore, SqliteStore,
 };
 use tempfile::tempdir;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::{Mutex, broadcast, oneshot};
+
+fn init_test_crypto() {
+    let _ = rustnetlens_core::init_crypto_provider();
+}
 
 static SERIAL: OnceLock<Mutex<()>> = OnceLock::new();
 
@@ -116,7 +120,13 @@ async fn start_proxy_server(
     };
     let (event_tx, _) = broadcast::channel(32);
     let (shutdown_tx, shutdown_rx) = oneshot::channel();
-    let server = ProxyServer::new(config, store, rules, event_tx);
+    let server = ProxyServer::new(
+        config,
+        store,
+        rules,
+        event_tx,
+        Arc::new(Mutex::new(HttpsMitmState::default())),
+    );
     tokio::spawn(async move {
         let _ = server.run(shutdown_rx).await;
     });
@@ -134,6 +144,7 @@ fn proxy_client(proxy_addr: SocketAddr) -> Client {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn proxy_http_roundtrip_and_persists_session() {
     let _guard = SERIAL.get_or_init(|| Mutex::new(())).lock().await;
+    init_test_crypto();
     let dir = tempdir().unwrap();
     let store = Arc::new(
         SqliteStore::new(dir.path().join("roundtrip.sqlite3"))
@@ -167,6 +178,7 @@ async fn proxy_http_roundtrip_and_persists_session() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn mock_rule_short_circuits_upstream() {
     let _guard = SERIAL.get_or_init(|| Mutex::new(())).lock().await;
+    init_test_crypto();
     let dir = tempdir().unwrap();
     let store = Arc::new(
         SqliteStore::new(dir.path().join("mock.sqlite3"))
@@ -228,6 +240,7 @@ async fn mock_rule_short_circuits_upstream() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn connect_tunnel_records_session() {
     let _guard = SERIAL.get_or_init(|| Mutex::new(())).lock().await;
+    init_test_crypto();
     let dir = tempdir().unwrap();
     let store = Arc::new(
         SqliteStore::new(dir.path().join("connect.sqlite3"))

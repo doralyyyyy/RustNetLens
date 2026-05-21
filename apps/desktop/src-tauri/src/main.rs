@@ -3,6 +3,7 @@ mod state;
 
 use std::path::PathBuf;
 
+use rustnetlens_core::init_crypto_provider;
 use state::AppState;
 use tauri::Manager;
 
@@ -17,6 +18,7 @@ fn app_data_dir(app: &tauri::App) -> Result<PathBuf, String> {
 
 fn main() {
     tracing_subscriber::fmt::init();
+    init_crypto_provider();
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
@@ -31,6 +33,9 @@ fn main() {
             commands::proxy_status,
             commands::start_proxy,
             commands::stop_proxy,
+            commands::https_mitm_status,
+            commands::generate_root_ca,
+            commands::set_https_mitm_enabled,
             commands::list_sessions,
             commands::traffic_overview,
             commands::get_session_detail,
@@ -39,7 +44,11 @@ fn main() {
             commands::save_rule,
             commands::delete_rule,
             commands::replay_session,
-            commands::export_sessions
+            commands::export_sessions,
+            commands::list_collections,
+            commands::save_collection,
+            commands::delete_collection,
+            commands::add_session_to_collection
         ])
         .run(tauri::generate_context!())
         .expect("failed to run RustNetLens");

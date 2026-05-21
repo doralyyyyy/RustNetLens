@@ -10,6 +10,9 @@
     "allow-proxy-status",
     "allow-start-proxy",
     "allow-stop-proxy",
+    "allow-https-mitm-status",
+    "allow-generate-root-ca",
+    "allow-set-https-mitm-enabled",
     "allow-list-sessions",
     "allow-traffic-overview",
     "allow-get-session-detail",
@@ -18,6 +21,10 @@
     "allow-save-rule",
     "allow-delete-rule",
     "allow-replay-session",
-    "allow-export-sessions"
+    "allow-export-sessions",
+    "allow-list-collections",
+    "allow-save-collection",
+    "allow-delete-collection",
+    "allow-add-session-to-collection"
   ]
 }

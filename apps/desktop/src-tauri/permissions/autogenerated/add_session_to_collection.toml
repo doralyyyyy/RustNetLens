@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-add-session-to-collection"
+description = "Enables the add_session_to_collection command without any pre-configured scope."
+commands.allow = ["add_session_to_collection"]
+
+[[permission]]
+identifier = "deny-add-session-to-collection"
+description = "Denies the add_session_to_collection command without any pre-configured scope."
+commands.deny = ["add_session_to_collection"]

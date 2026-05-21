@@ -1,9 +1,12 @@
-import type { CapturedSession, HeaderPair } from "../types";
+import { useEffect, useState } from "react";
+import type { CapturedSession, HeaderPair, RequestCollection, TrailersPreview } from "../types";
 
 type Props = {
   session: CapturedSession | null;
+  collections: RequestCollection[];
   onReplay: () => void;
   onExport: () => void;
+  onAddToCollection: (collectionId: string) => void;
 };
 
 function HeaderList({ headers }: { headers: HeaderPair[] }) {
@@ -18,6 +21,10 @@ function HeaderList({ headers }: { headers: HeaderPair[] }) {
       {headers.length === 0 && <p className="muted">No headers captured.</p>}
     </div>
   );
+}
+
+function TrailerList({ trailers }: { trailers: TrailersPreview }) {
+  return <HeaderList headers={trailers.headers} />;
 }
 
 function BodyBlock({ title, body }: { title: string; body: CapturedSession["request_body"] }) {
@@ -73,7 +80,15 @@ function WebSocketFramesBlock({ frames }: { frames: CapturedSession["websocket_f
   );
 }
 
-export function RequestDetail({ session, onReplay, onExport }: Props) {
+export function RequestDetail({ session, collections, onReplay, onExport, onAddToCollection }: Props) {
+  const [collectionId, setCollectionId] = useState("");
+
+  useEffect(() => {
+    if (!collections.some((collection) => collection.id === collectionId)) {
+      setCollectionId(collections[0]?.id ?? "");
+    }
+  }, [collectionId, collections]);
+
   if (!session) {
     return (
       <aside className="detail empty-detail">
@@ -105,9 +120,25 @@ export function RequestDetail({ session, onReplay, onExport }: Props) {
 
       {isConnect && (
         <div className="notice">
-          HTTPS content is not decrypted in MVP. RustNetLens records only tunnel metadata.
+          CONNECT tunnels stay opaque while HTTPS decrypt is off. Enable it only for local authorized debugging.
         </div>
       )}
+
+      <section className="collection-save">
+        <div>
+          <strong>Save Request</strong>
+          <p className="muted">Collections store the current redacted request snapshot.</p>
+        </div>
+        <select value={collectionId} onChange={(event) => setCollectionId(event.target.value)}>
+          {collections.map((collection) => (
+            <option value={collection.id} key={collection.id}>{collection.name}</option>
+          ))}
+          {collections.length === 0 && <option value="">Create a collection first</option>}
+        </select>
+        <button disabled={!collectionId || isConnect} onClick={() => onAddToCollection(collectionId)}>
+          Add
+        </button>
+      </section>
 
       <section className="overview-grid">
         <div>
@@ -146,6 +177,29 @@ export function RequestDetail({ session, onReplay, onExport }: Props) {
           <HeaderList headers={session.response_headers} />
         </section>
       </div>
+
+      {(session.grpc_request_metadata.length > 0
+        || session.grpc_response_metadata.length > 0
+        || session.grpc_request_trailers.headers.length > 0
+        || session.grpc_response_trailers.headers.length > 0) && (
+        <section className="body-block grpc-block">
+          <h4>gRPC Metadata</h4>
+          <div className="detail-columns">
+            <section>
+              <h3>Request Metadata</h3>
+              <HeaderList headers={session.grpc_request_metadata} />
+              <h3>Request Trailers</h3>
+              <TrailerList trailers={session.grpc_request_trailers} />
+            </section>
+            <section>
+              <h3>Response Metadata</h3>
+              <HeaderList headers={session.grpc_response_metadata} />
+              <h3>Response Trailers</h3>
+              <TrailerList trailers={session.grpc_response_trailers} />
+            </section>
+          </div>
+        </section>
+      )}
 
       <BodyBlock title="Request Body" body={session.request_body} />
       <BodyBlock title="Response Body" body={session.response_body} />

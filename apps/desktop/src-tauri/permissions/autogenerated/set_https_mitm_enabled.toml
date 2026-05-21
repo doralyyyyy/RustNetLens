@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-set-https-mitm-enabled"
+description = "Enables the set_https_mitm_enabled command without any pre-configured scope."
+commands.allow = ["set_https_mitm_enabled"]
+
+[[permission]]
+identifier = "deny-set-https-mitm-enabled"
+description = "Denies the set_https_mitm_enabled command without any pre-configured scope."
+commands.deny = ["set_https_mitm_enabled"]

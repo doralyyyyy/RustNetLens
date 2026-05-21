@@ -45,3 +45,15 @@ pub enum ReplayError {
     #[error("store error: {0}")]
     Store(String),
 }
+
+#[derive(Debug, Error)]
+pub enum SecurityError {
+    #[error("io error: {0}")]
+    Io(String),
+    #[error("certificate error: {0}")]
+    Certificate(String),
+    #[error("tls error: {0}")]
+    Tls(String),
+    #[error("invalid host name: {0}")]
+    InvalidHost(String),
+}

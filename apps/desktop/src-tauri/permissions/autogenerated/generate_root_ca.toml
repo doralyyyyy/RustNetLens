@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-generate-root-ca"
+description = "Enables the generate_root_ca command without any pre-configured scope."
+commands.allow = ["generate_root_ca"]
+
+[[permission]]
+identifier = "deny-generate-root-ca"
+description = "Denies the generate_root_ca command without any pre-configured scope."
+commands.deny = ["generate_root_ca"]

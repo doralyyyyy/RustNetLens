@@ -30,6 +30,29 @@ const sampleRule = (): Rule => {
   };
 };
 
+const sampleScriptRule = (): Rule => {
+  const now = new Date().toISOString();
+  return {
+    id: `script-rule-${Date.now()}`,
+    name: "Script request marker",
+    enabled: true,
+    priority: 120,
+    match: {
+      host: "localhost",
+    },
+    action: {
+      type: "script",
+      script: `if is_request {
+  #{ request_headers: [#{ name: "x-rustnetlens-script", value: "rhai" }] }
+} else {
+  #{}
+}`,
+    },
+    created_at: now,
+    updated_at: now,
+  };
+};
+
 export function RuleEditor({ rules, onSave, onDelete, onRefresh }: Props) {
   const [selected, setSelected] = useState<Rule>(sampleRule());
   const [text, setText] = useState(JSON.stringify(selected, null, 2));
@@ -63,6 +86,11 @@ export function RuleEditor({ rules, onSave, onDelete, onRefresh }: Props) {
             setSelected(rule);
             setText(JSON.stringify(rule, null, 2));
           }}>New</button>
+          <button onClick={() => {
+            const rule = sampleScriptRule();
+            setSelected(rule);
+            setText(JSON.stringify(rule, null, 2));
+          }}>New Script</button>
           <button onClick={save}>Save</button>
           <button onClick={onRefresh}>Refresh</button>
         </div>
@@ -82,6 +110,10 @@ export function RuleEditor({ rules, onSave, onDelete, onRefresh }: Props) {
           </button>
         ))}
       </div>
+      <p className="muted">
+        Script actions run Rhai with `session`, `headers`, `trailers`, and `is_request`.
+        Return a map with rewrite fields, `delay_ms`, or `mock_response`.
+      </p>
       <textarea value={text} onChange={(event) => setText(event.target.value)} spellCheck={false} />
       <div className="rule-actions">
         <button className="danger" disabled={!selected.id} onClick={() => onDelete(selected.id)}>Delete</button>

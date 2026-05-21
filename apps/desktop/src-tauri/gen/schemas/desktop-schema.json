@@ -345,10 +345,22 @@
       "description": "Permission identifier",
       "oneOf": [
         {
+          "description": "Enables the add_session_to_collection command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-add-session-to-collection",
+          "markdownDescription": "Enables the add_session_to_collection command without any pre-configured scope."
+        },
+        {
           "description": "Enables the clear_sessions command without any pre-configured scope.",
           "type": "string",
           "const": "allow-clear-sessions",
           "markdownDescription": "Enables the clear_sessions command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the delete_collection command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-delete-collection",
+          "markdownDescription": "Enables the delete_collection command without any pre-configured scope."
         },
         {
           "description": "Enables the delete_rule command without any pre-configured scope.",
@@ -363,10 +375,28 @@
           "markdownDescription": "Enables the export_sessions command without any pre-configured scope."
         },
         {
+          "description": "Enables the generate_root_ca command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-generate-root-ca",
+          "markdownDescription": "Enables the generate_root_ca command without any pre-configured scope."
+        },
+        {
           "description": "Enables the get_session_detail command without any pre-configured scope.",
           "type": "string",
           "const": "allow-get-session-detail",
           "markdownDescription": "Enables the get_session_detail command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the https_mitm_status command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-https-mitm-status",
+          "markdownDescription": "Enables the https_mitm_status command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the list_collections command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-list-collections",
+          "markdownDescription": "Enables the list_collections command without any pre-configured scope."
         },
         {
           "description": "Enables the list_rules command without any pre-configured scope.",
@@ -393,10 +423,22 @@
           "markdownDescription": "Enables the replay_session command without any pre-configured scope."
         },
         {
+          "description": "Enables the save_collection command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-save-collection",
+          "markdownDescription": "Enables the save_collection command without any pre-configured scope."
+        },
+        {
           "description": "Enables the save_rule command without any pre-configured scope.",
           "type": "string",
           "const": "allow-save-rule",
           "markdownDescription": "Enables the save_rule command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the set_https_mitm_enabled command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-set-https-mitm-enabled",
+          "markdownDescription": "Enables the set_https_mitm_enabled command without any pre-configured scope."
         },
         {
           "description": "Enables the start_proxy command without any pre-configured scope.",
@@ -417,10 +459,22 @@
           "markdownDescription": "Enables the traffic_overview command without any pre-configured scope."
         },
         {
+          "description": "Denies the add_session_to_collection command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-add-session-to-collection",
+          "markdownDescription": "Denies the add_session_to_collection command without any pre-configured scope."
+        },
+        {
           "description": "Denies the clear_sessions command without any pre-configured scope.",
           "type": "string",
           "const": "deny-clear-sessions",
           "markdownDescription": "Denies the clear_sessions command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the delete_collection command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-delete-collection",
+          "markdownDescription": "Denies the delete_collection command without any pre-configured scope."
         },
         {
           "description": "Denies the delete_rule command without any pre-configured scope.",
@@ -435,10 +489,28 @@
           "markdownDescription": "Denies the export_sessions command without any pre-configured scope."
         },
         {
+          "description": "Denies the generate_root_ca command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-generate-root-ca",
+          "markdownDescription": "Denies the generate_root_ca command without any pre-configured scope."
+        },
+        {
           "description": "Denies the get_session_detail command without any pre-configured scope.",
           "type": "string",
           "const": "deny-get-session-detail",
           "markdownDescription": "Denies the get_session_detail command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the https_mitm_status command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-https-mitm-status",
+          "markdownDescription": "Denies the https_mitm_status command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the list_collections command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-list-collections",
+          "markdownDescription": "Denies the list_collections command without any pre-configured scope."
         },
         {
           "description": "Denies the list_rules command without any pre-configured scope.",
@@ -465,10 +537,22 @@
           "markdownDescription": "Denies the replay_session command without any pre-configured scope."
         },
         {
+          "description": "Denies the save_collection command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-save-collection",
+          "markdownDescription": "Denies the save_collection command without any pre-configured scope."
+        },
+        {
           "description": "Denies the save_rule command without any pre-configured scope.",
           "type": "string",
           "const": "deny-save-rule",
           "markdownDescription": "Denies the save_rule command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the set_https_mitm_enabled command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-set-https-mitm-enabled",
+          "markdownDescription": "Denies the set_https_mitm_enabled command without any pre-configured scope."
         },
         {
           "description": "Denies the start_proxy command without any pre-configured scope.",

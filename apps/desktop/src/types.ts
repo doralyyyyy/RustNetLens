@@ -16,6 +16,10 @@ export type BodyPreview = {
   base64?: string | null;
 };
 
+export type TrailersPreview = {
+  headers: HeaderPair[];
+};
+
 export type TimelineEntry = {
   name: string;
   started_at: string;
@@ -50,6 +54,10 @@ export type CapturedSession = {
   response_headers: HeaderPair[];
   request_body: BodyPreview;
   response_body: BodyPreview;
+  grpc_request_metadata: HeaderPair[];
+  grpc_response_metadata: HeaderPair[];
+  grpc_request_trailers: TrailersPreview;
+  grpc_response_trailers: TrailersPreview;
   timeline: TimelineEntry[];
   websocket_frames: WebSocketFramePreview[];
   bytes_up: number;
@@ -87,6 +95,22 @@ export type ProxyStatus = {
   listen_addr?: string | null;
   started_at?: string | null;
   active_sessions: number;
+  https_mitm: HttpsMitmStatus;
+};
+
+export type RootCaInfo = {
+  generated_at: string;
+  cert_path: string;
+  fingerprint_sha256: string;
+};
+
+export type HttpsMitmStatus = {
+  enabled: boolean;
+  ready: boolean;
+  local_only: boolean;
+  default_off: boolean;
+  root_ca?: RootCaInfo | null;
+  install_hint: string;
 };
 
 export type TrafficBucket = {
@@ -123,7 +147,28 @@ export type Rule = {
     | { type: "rewrite_request_headers"; headers: HeaderPair[] }
     | { type: "rewrite_response_headers"; headers: HeaderPair[] }
     | { type: "mock_response"; status: number; headers: HeaderPair[]; body: string }
-    | { type: "delay"; millis: number };
+    | { type: "delay"; millis: number }
+    | { type: "script"; script: string };
+  created_at: string;
+  updated_at: string;
+};
+
+export type CollectionItem = {
+  id: string;
+  name: string;
+  session_id?: string | null;
+  method?: string | null;
+  url?: string | null;
+  headers: HeaderPair[];
+  body: BodyPreview;
+  created_at: string;
+};
+
+export type RequestCollection = {
+  id: string;
+  name: string;
+  description?: string | null;
+  items: CollectionItem[];
   created_at: string;
   updated_at: string;
 };

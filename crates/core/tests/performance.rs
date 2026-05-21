@@ -13,10 +13,14 @@ use hyper::server::conn::http1;
 use hyper::service::service_fn;
 use hyper_util::rt::TokioIo;
 use reqwest::{Client, Proxy};
-use rustnetlens_core::{ProxyConfig, ProxyServer, RuleEngine, SqliteStore};
+use rustnetlens_core::{HttpsMitmState, ProxyConfig, ProxyServer, RuleEngine, SqliteStore};
 use tempfile::tempdir;
 use tokio::net::TcpListener;
 use tokio::sync::{Mutex, broadcast, oneshot};
+
+fn init_test_crypto() {
+    let _ = rustnetlens_core::init_crypto_provider();
+}
 
 static SERIAL: OnceLock<Mutex<()>> = OnceLock::new();
 
@@ -74,6 +78,7 @@ fn proxy_client(proxy_addr: SocketAddr) -> Client {
 #[ignore]
 async fn proxy_smoke_perf() {
     let _guard = SERIAL.get_or_init(|| Mutex::new(())).lock().await;
+    init_test_crypto();
     let dir = tempdir().unwrap();
     let store = Arc::new(
         SqliteStore::new(dir.path().join("perf.sqlite3"))
@@ -94,7 +99,13 @@ async fn proxy_smoke_perf() {
     };
     let (event_tx, _) = broadcast::channel(32);
     let (shutdown_tx, shutdown_rx) = oneshot::channel();
-    let server = ProxyServer::new(config, store.clone(), rules, event_tx);
+    let server = ProxyServer::new(
+        config,
+        store.clone(),
+        rules,
+        event_tx,
+        Arc::new(Mutex::new(HttpsMitmState::default())),
+    );
     tokio::spawn(async move {
         let _ = server.run(shutdown_rx).await;
     });

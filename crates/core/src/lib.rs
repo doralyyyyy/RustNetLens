@@ -5,6 +5,7 @@ pub mod model;
 pub mod proxy;
 pub mod replay;
 pub mod rules;
+pub mod security;
 pub mod store;
 #[cfg(test)]
 mod tests;
@@ -16,4 +17,9 @@ pub use model::*;
 pub use proxy::*;
 pub use replay::*;
 pub use rules::*;
+pub use security::*;
 pub use store::*;
+
+pub fn init_crypto_provider() {
+    let _ = rustls::crypto::ring::default_provider().install_default();
+}

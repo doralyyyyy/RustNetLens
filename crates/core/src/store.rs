@@ -8,8 +8,8 @@ use uuid::Uuid;
 
 use crate::error::StoreError;
 use crate::model::{
-    CapturedSession, Rule, SessionFilter, SessionId, SessionKind, SessionState, SessionSummary,
-    TrafficBucket, TrafficOverview,
+    CapturedSession, RequestCollection, Rule, SessionFilter, SessionId, SessionKind, SessionState,
+    SessionSummary, TrafficBucket, TrafficOverview,
 };
 
 #[async_trait::async_trait]
@@ -77,6 +77,40 @@ impl SqliteStore {
                 upsert_rule(conn, rule)?;
             }
             Ok(())
+        })
+    }
+
+    pub async fn list_collections(&self) -> Result<Vec<RequestCollection>, StoreError> {
+        self.with_conn(load_collections)
+    }
+
+    pub async fn save_collection(&self, collection: &RequestCollection) -> Result<(), StoreError> {
+        let collection = collection.clone();
+        self.with_conn(move |conn| upsert_collection(conn, &collection))
+    }
+
+    pub async fn delete_collection(&self, id: &str) -> Result<(), StoreError> {
+        let id = id.to_string();
+        self.with_conn(move |conn| {
+            conn.execute("DELETE FROM collections WHERE id = ?1", params![id])
+                .map_err(db_err)?;
+            Ok(())
+        })
+    }
+
+    pub async fn add_session_to_collection(
+        &self,
+        collection_id: &str,
+        session: &CapturedSession,
+    ) -> Result<(), StoreError> {
+        let collection_id = collection_id.to_string();
+        let item = crate::model::CollectionItem::from_session(session);
+        self.with_conn(move |conn| {
+            let mut collection =
+                load_collection(conn, &collection_id)?.ok_or(StoreError::NotFound)?;
+            collection.items.push(item);
+            collection.updated_at = Utc::now();
+            upsert_collection(conn, &collection)
         })
     }
 
@@ -198,6 +232,14 @@ fn init_schema(conn: &Connection) -> Result<(), StoreError> {
             enabled INTEGER NOT NULL,
             priority INTEGER NOT NULL DEFAULT 100,
             rule_json TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS collections (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            description TEXT,
+            items_json TEXT NOT NULL,
             created_at TEXT NOT NULL,
             updated_at TEXT NOT NULL
         );
@@ -411,6 +453,10 @@ fn load_session(conn: &Connection, id: SessionId) -> Result<Option<CapturedSessi
             response_headers: vec![],
             request_body: Default::default(),
             response_body: Default::default(),
+            grpc_request_metadata: vec![],
+            grpc_response_metadata: vec![],
+            grpc_request_trailers: Default::default(),
+            grpc_response_trailers: Default::default(),
             timeline: vec![],
             websocket_frames: vec![],
             bytes_up: bytes_up.max(0) as u64,
@@ -720,6 +766,108 @@ fn upsert_rule(conn: &Connection, rule: &Rule) -> Result<(), StoreError> {
             json,
             rule.created_at.to_rfc3339(),
             rule.updated_at.to_rfc3339(),
+        ],
+    )
+    .map_err(db_err)?;
+    Ok(())
+}
+
+fn load_collections(conn: &Connection) -> Result<Vec<RequestCollection>, StoreError> {
+    let mut stmt = conn
+        .prepare(
+            "SELECT id, name, description, items_json, created_at, updated_at FROM collections ORDER BY updated_at DESC",
+        )
+        .map_err(db_err)?;
+    let rows = stmt
+        .query_map([], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, Option<String>>(2)?,
+                row.get::<_, String>(3)?,
+                row.get::<_, String>(4)?,
+                row.get::<_, String>(5)?,
+            ))
+        })
+        .map_err(db_err)?;
+    let mut collections = Vec::new();
+    for row in rows {
+        let (id, name, description, items_json, created_at, updated_at) = row.map_err(db_err)?;
+        collections.push(RequestCollection {
+            id,
+            name,
+            description,
+            items: serde_json::from_str(&items_json)
+                .map_err(|e| StoreError::Serialization(e.to_string()))?,
+            created_at: DateTime::parse_from_rfc3339(&created_at)
+                .map_err(|e| StoreError::Serialization(e.to_string()))?
+                .with_timezone(&Utc),
+            updated_at: DateTime::parse_from_rfc3339(&updated_at)
+                .map_err(|e| StoreError::Serialization(e.to_string()))?
+                .with_timezone(&Utc),
+        });
+    }
+    Ok(collections)
+}
+
+fn load_collection(conn: &Connection, id: &str) -> Result<Option<RequestCollection>, StoreError> {
+    let mut stmt = conn
+        .prepare(
+            "SELECT id, name, description, items_json, created_at, updated_at FROM collections WHERE id = ?1",
+        )
+        .map_err(db_err)?;
+    let row = stmt
+        .query_row(params![id], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, Option<String>>(2)?,
+                row.get::<_, String>(3)?,
+                row.get::<_, String>(4)?,
+                row.get::<_, String>(5)?,
+            ))
+        })
+        .optional()
+        .map_err(db_err)?;
+    let Some((id, name, description, items_json, created_at, updated_at)) = row else {
+        return Ok(None);
+    };
+    Ok(Some(RequestCollection {
+        id,
+        name,
+        description,
+        items: serde_json::from_str(&items_json)
+            .map_err(|e| StoreError::Serialization(e.to_string()))?,
+        created_at: DateTime::parse_from_rfc3339(&created_at)
+            .map_err(|e| StoreError::Serialization(e.to_string()))?
+            .with_timezone(&Utc),
+        updated_at: DateTime::parse_from_rfc3339(&updated_at)
+            .map_err(|e| StoreError::Serialization(e.to_string()))?
+            .with_timezone(&Utc),
+    }))
+}
+
+fn upsert_collection(conn: &Connection, collection: &RequestCollection) -> Result<(), StoreError> {
+    let items_json = serde_json::to_string(&collection.items)
+        .map_err(|e| StoreError::Serialization(e.to_string()))?;
+    conn.execute(
+        r#"
+        INSERT INTO collections (id, name, description, items_json, created_at, updated_at)
+        VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+        ON CONFLICT(id) DO UPDATE SET
+            name=excluded.name,
+            description=excluded.description,
+            items_json=excluded.items_json,
+            created_at=excluded.created_at,
+            updated_at=excluded.updated_at
+        "#,
+        params![
+            collection.id,
+            collection.name,
+            collection.description,
+            items_json,
+            collection.created_at.to_rfc3339(),
+            collection.updated_at.to_rfc3339(),
         ],
     )
     .map_err(db_err)?;

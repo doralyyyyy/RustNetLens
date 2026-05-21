@@ -76,9 +76,11 @@ mod tests {
             session,
             request_headers: vec![],
             request_body: vec![],
+            request_trailers: vec![],
             should_mock: false,
             delay_ms: None,
             rewrite_request_headers: vec![],
+            rewrite_request_trailers: vec![],
             matched_rule_ids: vec![],
         };
         let result = engine.apply_request(&mut ctx).await;

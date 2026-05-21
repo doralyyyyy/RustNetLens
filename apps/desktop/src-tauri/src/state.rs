@@ -4,7 +4,9 @@ use std::sync::Arc;
 
 use chrono::{DateTime, Utc};
 use rustnetlens_core::{
-    CaptureEvent, ProxyConfig, ProxyServer, ProxyStatus, RuleEngine, SessionSummary, SqliteStore,
+    CaptureEvent, HttpsMitmState, HttpsMitmStatus, ProxyConfig, ProxyServer, ProxyStatus,
+    RequestCollection, RootCaInfo, RuleEngine, SessionId, SessionStore, SessionSummary,
+    SqliteStore,
 };
 use tauri::{AppHandle, Emitter};
 use tokio::sync::{Mutex, broadcast, oneshot};
@@ -31,6 +33,8 @@ pub struct AppState {
     pub event_tx: broadcast::Sender<CaptureEvent>,
     pub proxy: Mutex<Option<ProxyHandle>>,
     pub export_dir: PathBuf,
+    pub app_dir: PathBuf,
+    pub https_mitm: Arc<Mutex<HttpsMitmState>>,
 }
 
 impl AppState {
@@ -56,20 +60,26 @@ impl AppState {
             event_tx,
             proxy: Mutex::new(None),
             export_dir,
+            app_dir,
+            https_mitm: Arc::new(Mutex::new(HttpsMitmState::default())),
         })
     }
 
     pub async fn proxy_status(&self) -> ProxyStatus {
         let guard = self.proxy.lock().await;
+        let https_mitm = self.https_mitm.lock().await.status();
         if let Some(handle) = guard.as_ref() {
             ProxyStatus {
                 running: true,
                 listen_addr: Some(format!("http://{}", handle.listen_addr)),
                 started_at: Some(handle.started_at),
                 active_sessions: 0,
+                https_mitm,
             }
         } else {
-            ProxyStatus::stopped()
+            let mut stopped = ProxyStatus::stopped();
+            stopped.https_mitm = https_mitm;
+            stopped
         }
     }
 
@@ -93,6 +103,7 @@ impl AppState {
             self.store.clone(),
             self.rules.clone(),
             self.event_tx.clone(),
+            self.https_mitm.clone(),
         );
         let task = tauri::async_runtime::spawn(async move {
             if let Err(err) = server.run(shutdown_rx).await {
@@ -116,5 +127,63 @@ impl AppState {
         drop(guard);
         handle.stop().await;
         Ok(())
+    }
+
+    pub async fn https_mitm_status(&self) -> HttpsMitmStatus {
+        self.https_mitm.lock().await.status()
+    }
+
+    pub async fn ensure_root_ca(&self) -> Result<RootCaInfo, String> {
+        let mut guard = self.https_mitm.lock().await;
+        let root_dir = self.app_dir.join("certs");
+        guard.ensure_root_ca(&root_dir).map_err(|e| e.to_string())
+    }
+
+    pub async fn set_https_mitm_enabled(&self, enabled: bool) -> Result<HttpsMitmStatus, String> {
+        let mut guard = self.https_mitm.lock().await;
+        if enabled && !guard.is_ready() {
+            let root_dir = self.app_dir.join("certs");
+            guard.ensure_root_ca(&root_dir).map_err(|e| e.to_string())?;
+        }
+        guard.set_enabled(enabled);
+        Ok(guard.status())
+    }
+
+    pub async fn list_collections(&self) -> Result<Vec<RequestCollection>, String> {
+        self.store
+            .list_collections()
+            .await
+            .map_err(|e| e.to_string())
+    }
+
+    pub async fn save_collection(&self, collection: &RequestCollection) -> Result<(), String> {
+        self.store
+            .save_collection(collection)
+            .await
+            .map_err(|e| e.to_string())
+    }
+
+    pub async fn delete_collection(&self, id: &str) -> Result<(), String> {
+        self.store
+            .delete_collection(id)
+            .await
+            .map_err(|e| e.to_string())
+    }
+
+    pub async fn add_session_to_collection(
+        &self,
+        collection_id: &str,
+        session_id: SessionId,
+    ) -> Result<(), String> {
+        let session = self
+            .store
+            .get_session(session_id)
+            .await
+            .map_err(|e| e.to_string())?
+            .ok_or_else(|| "session not found".to_string())?;
+        self.store
+            .add_session_to_collection(collection_id, &session)
+            .await
+            .map_err(|e| e.to_string())
     }
 }

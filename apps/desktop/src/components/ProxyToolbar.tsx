@@ -9,10 +9,24 @@ type Props = {
   onStop: () => void;
   onClear: () => void;
   onExport: () => void;
+  onGenerateRootCa: () => void;
+  onToggleHttpsMitm: (enabled: boolean) => void;
 };
 
-export function ProxyToolbar({ port, setPort, status, busy, onStart, onStop, onClear, onExport }: Props) {
+export function ProxyToolbar({
+  port,
+  setPort,
+  status,
+  busy,
+  onStart,
+  onStop,
+  onClear,
+  onExport,
+  onGenerateRootCa,
+  onToggleHttpsMitm,
+}: Props) {
   const running = status?.running ?? false;
+  const httpsMitm = status?.https_mitm;
   return (
     <header className="toolbar">
       <div className="brand">
@@ -51,6 +65,30 @@ export function ProxyToolbar({ port, setPort, status, busy, onStart, onStop, onC
         <span />
         {running ? status?.listen_addr : "Stopped"}
       </div>
+      <section className={httpsMitm?.enabled ? "mitm-panel enabled" : "mitm-panel"}>
+        <div className="mitm-copy">
+          <strong>HTTPS Decrypt {httpsMitm?.enabled ? "On" : "Off"}</strong>
+          <p>Disabled by default. Use only for local authorized debugging.</p>
+          <small>{httpsMitm?.install_hint}</small>
+          {httpsMitm?.root_ca && (
+            <code title={httpsMitm.root_ca.fingerprint_sha256}>
+              Root CA: {httpsMitm.root_ca.cert_path}
+            </code>
+          )}
+        </div>
+        <div className="mitm-actions">
+          <button disabled={busy} onClick={onGenerateRootCa}>
+            {httpsMitm?.ready ? "Refresh Root CA" : "Generate Root CA"}
+          </button>
+          <button
+            className={httpsMitm?.enabled ? "" : "primary"}
+            disabled={busy}
+            onClick={() => onToggleHttpsMitm(!(httpsMitm?.enabled ?? false))}
+          >
+            {httpsMitm?.enabled ? "Disable Decrypt" : "Enable Decrypt"}
+          </button>
+        </div>
+      </section>
     </header>
   );
 }

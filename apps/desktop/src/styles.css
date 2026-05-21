@@ -22,7 +22,7 @@ body {
     linear-gradient(135deg, #07110f 0%, #10201d 54%, #0b1513 100%);
 }
 
-button, input, textarea {
+button, input, select, textarea {
   font: inherit;
 }
 
@@ -56,7 +56,7 @@ button.danger {
   color: var(--danger);
 }
 
-input, textarea {
+input, select, textarea {
   color: #e9f2ef;
   background: rgba(2, 10, 8, 0.62);
   border: 1px solid var(--line);
@@ -65,7 +65,7 @@ input, textarea {
   outline: none;
 }
 
-input:focus, textarea:focus {
+input:focus, select:focus, textarea:focus {
   border-color: var(--accent);
   box-shadow: 0 0 0 3px rgba(102, 227, 180, 0.12);
 }
@@ -85,6 +85,46 @@ input:focus, textarea:focus {
   background: rgba(6, 18, 15, 0.72);
   border-radius: 24px;
   backdrop-filter: blur(18px);
+}
+
+.mitm-panel {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: minmax(340px, 1fr) auto;
+  gap: 14px;
+  padding: 14px;
+  border: 1px solid rgba(244, 201, 93, 0.24);
+  border-radius: 20px;
+  background:
+    linear-gradient(135deg, rgba(244, 201, 93, 0.13), rgba(102, 227, 180, 0.05)),
+    rgba(255, 255, 255, 0.03);
+}
+
+.mitm-panel.enabled {
+  border-color: rgba(102, 227, 180, 0.4);
+}
+
+.mitm-copy {
+  display: grid;
+  gap: 5px;
+}
+
+.mitm-copy p,
+.mitm-copy small {
+  margin: 0;
+  color: var(--muted);
+}
+
+.mitm-copy code {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--accent-2);
+}
+
+.mitm-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
 }
 
 .brand {
@@ -162,11 +202,65 @@ input:focus, textarea:focus {
   margin-top: 18px;
 }
 
-.left-panel, .detail, .rules-panel {
+.left-panel, .detail, .rules-panel, .collections-panel {
   border: 1px solid var(--line);
   background: var(--panel);
   border-radius: 24px;
   backdrop-filter: blur(18px);
+}
+
+.collections-panel {
+  padding: 14px;
+}
+
+.collections-panel .panel-title {
+  align-items: start;
+  gap: 12px;
+}
+
+.collections-panel p,
+.collection-card p {
+  margin: 4px 0 0;
+}
+
+.collection-create {
+  display: grid;
+  grid-template-columns: minmax(130px, 1fr) minmax(150px, 1fr) auto;
+  gap: 8px;
+}
+
+.collection-list {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.collection-card,
+.collection-save {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) auto auto;
+  gap: 10px;
+  align-items: center;
+  padding: 12px;
+  border-radius: 16px;
+  border: 1px solid rgba(142, 206, 185, 0.13);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.collection-card span {
+  color: var(--accent-2);
+}
+
+.collection-save {
+  margin: 12px 0;
+}
+
+.collection-save p {
+  margin: 4px 0 0;
+}
+
+.collection-save select {
+  min-width: 160px;
 }
 
 .left-panel {
@@ -410,6 +504,13 @@ input:focus, textarea:focus {
   margin-top: 16px;
 }
 
+.grpc-block {
+  padding: 14px;
+  border: 1px solid rgba(102, 227, 180, 0.16);
+  border-radius: 18px;
+  background: rgba(102, 227, 180, 0.04);
+}
+
 pre {
   margin: 8px 0 0;
   padding: 14px;
@@ -483,6 +584,12 @@ pre {
 @media (max-width: 1100px) {
   body { min-width: 0; }
   .toolbar, .main-grid {
+    grid-template-columns: 1fr;
+  }
+  .mitm-panel,
+  .collection-create,
+  .collection-card,
+  .collection-save {
     grid-template-columns: 1fr;
   }
   .overview-metrics,

@@ -18,8 +18,9 @@ bytes = "1"
 chrono = { version = "0.4", features = ["serde"] }
 http = "1"
 http-body-util = "0.1"
-hyper = { version = "1", features = ["client", "http1", "server"] }
-hyper-util = { version = "0.1", features = ["client-legacy", "http1", "server", "tokio"] }
+hyper = { version = "1", features = ["client", "http1", "http2", "server"] }
+hyper-rustls = { version = "0.27", default-features = false, features = ["http1", "http2", "native-tokio", "ring", "tls12"] }
+hyper-util = { version = "0.1", features = ["client-legacy", "http1", "http2", "server", "server-auto", "tokio"] }
 ring = "0.17"
 rusqlite = { version = "0.32", features = ["bundled"] }
 serde = { version = "1", features = ["derive"] }

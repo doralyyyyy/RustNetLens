@@ -1,8 +1,8 @@
 use chrono::Utc;
 use rustnetlens_core::{
-    CapturedSession, ProxyStatus, Rule, RuleEngine, SessionFilter, SessionStore, SessionSummary,
-    TrafficOverview, export_sessions_har_like, export_sessions_json, replay_session as replay_core,
-    write_export_file,
+    CapturedSession, ProxyStatus, RequestCollection, Rule, RuleEngine, SessionFilter, SessionStore,
+    SessionSummary, TrafficOverview, export_sessions_har_like, export_sessions_json,
+    replay_session as replay_core, write_export_file,
 };
 use tauri::State;
 use uuid::Uuid;
@@ -153,4 +153,59 @@ pub async fn export_sessions(
     };
     let path = write_export_file(&state.export_dir, &content, suffix).map_err(|e| e.to_string())?;
     Ok(path.to_string_lossy().to_string())
+}
+
+#[tauri::command]
+pub async fn https_mitm_status(
+    state: State<'_, AppState>,
+) -> Result<rustnetlens_core::HttpsMitmStatus, String> {
+    Ok(state.https_mitm_status().await)
+}
+
+#[tauri::command]
+pub async fn generate_root_ca(
+    state: State<'_, AppState>,
+) -> Result<rustnetlens_core::RootCaInfo, String> {
+    state.ensure_root_ca().await
+}
+
+#[tauri::command]
+pub async fn set_https_mitm_enabled(
+    state: State<'_, AppState>,
+    enabled: bool,
+) -> Result<rustnetlens_core::HttpsMitmStatus, String> {
+    state.set_https_mitm_enabled(enabled).await
+}
+
+#[tauri::command]
+pub async fn list_collections(
+    state: State<'_, AppState>,
+) -> Result<Vec<RequestCollection>, String> {
+    state.list_collections().await
+}
+
+#[tauri::command]
+pub async fn save_collection(
+    state: State<'_, AppState>,
+    collection: RequestCollection,
+) -> Result<(), String> {
+    state.save_collection(&collection).await
+}
+
+#[tauri::command]
+pub async fn delete_collection(state: State<'_, AppState>, id: String) -> Result<(), String> {
+    state.delete_collection(&id).await
+}
+
+#[tauri::command]
+pub async fn add_session_to_collection(
+    state: State<'_, AppState>,
+    collection_id: String,
+    session_id: String,
+) -> Result<(), String> {
+    let session_id =
+        Uuid::parse_str(&session_id).map_err(|e| format!("invalid session id: {e}"))?;
+    state
+        .add_session_to_collection(&collection_id, session_id)
+        .await
 }

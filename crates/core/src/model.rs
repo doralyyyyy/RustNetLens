@@ -44,6 +44,11 @@ pub struct BodyPreview {
     pub base64: Option<String>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+pub struct TrailersPreview {
+    pub headers: Vec<HeaderPair>,
+}
+
 impl BodyPreview {
     pub fn empty() -> Self {
         Self {
@@ -96,6 +101,14 @@ pub struct CapturedSession {
     pub request_body: BodyPreview,
     pub response_body: BodyPreview,
     #[serde(default)]
+    pub grpc_request_metadata: Vec<HeaderPair>,
+    #[serde(default)]
+    pub grpc_response_metadata: Vec<HeaderPair>,
+    #[serde(default)]
+    pub grpc_request_trailers: TrailersPreview,
+    #[serde(default)]
+    pub grpc_response_trailers: TrailersPreview,
+    #[serde(default)]
     pub timeline: Vec<TimelineEntry>,
     #[serde(default)]
     pub websocket_frames: Vec<WebSocketFramePreview>,
@@ -126,6 +139,10 @@ impl CapturedSession {
             response_headers: Vec::new(),
             request_body: BodyPreview::empty(),
             response_body: BodyPreview::empty(),
+            grpc_request_metadata: Vec::new(),
+            grpc_response_metadata: Vec::new(),
+            grpc_request_trailers: TrailersPreview::default(),
+            grpc_response_trailers: TrailersPreview::default(),
             timeline: Vec::new(),
             websocket_frames: Vec::new(),
             bytes_up: 0,
@@ -149,6 +166,7 @@ pub struct ProxyStatus {
     pub listen_addr: Option<String>,
     pub started_at: Option<DateTime<Utc>>,
     pub active_sessions: usize,
+    pub https_mitm: HttpsMitmStatus,
 }
 
 impl ProxyStatus {
@@ -158,6 +176,37 @@ impl ProxyStatus {
             listen_addr: None,
             started_at: None,
             active_sessions: 0,
+            https_mitm: HttpsMitmStatus::disabled(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct RootCaInfo {
+    pub generated_at: DateTime<Utc>,
+    pub cert_path: String,
+    pub fingerprint_sha256: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct HttpsMitmStatus {
+    pub enabled: bool,
+    pub ready: bool,
+    pub local_only: bool,
+    pub default_off: bool,
+    pub root_ca: Option<RootCaInfo>,
+    pub install_hint: String,
+}
+
+impl HttpsMitmStatus {
+    pub fn disabled() -> Self {
+        Self {
+            enabled: false,
+            ready: false,
+            local_only: true,
+            default_off: true,
+            root_ca: None,
+            install_hint: "HTTPS decrypt is disabled by default. Install the local Root CA only on machines you control.".into(),
         }
     }
 }
@@ -233,6 +282,69 @@ pub enum RuleAction {
     Delay {
         millis: u64,
     },
+    Script {
+        script: String,
+    },
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct CollectionItem {
+    pub id: String,
+    pub name: String,
+    pub session_id: Option<SessionId>,
+    pub method: Option<String>,
+    pub url: Option<String>,
+    pub headers: Vec<HeaderPair>,
+    pub body: BodyPreview,
+    pub created_at: DateTime<Utc>,
+}
+
+impl CollectionItem {
+    pub fn from_session(session: &CapturedSession) -> Self {
+        Self {
+            id: Uuid::new_v4().to_string(),
+            name: session
+                .url
+                .clone()
+                .or_else(|| session.host.clone())
+                .unwrap_or_else(|| "Captured request".into()),
+            session_id: Some(session.id),
+            method: session.method.clone(),
+            url: session.url.clone(),
+            headers: session.request_headers.clone(),
+            body: session.request_body.clone(),
+            created_at: Utc::now(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct RequestCollection {
+    pub id: String,
+    pub name: String,
+    pub description: Option<String>,
+    pub items: Vec<CollectionItem>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+impl RequestCollection {
+    pub fn new(id: impl Into<String>, name: impl Into<String>) -> Self {
+        let now = Utc::now();
+        Self {
+            id: id.into(),
+            name: name.into(),
+            description: None,
+            items: Vec::new(),
+            created_at: now,
+            updated_at: now,
+        }
+    }
+
+    pub fn add_session(&mut self, session: &CapturedSession) {
+        self.items.push(CollectionItem::from_session(session));
+        self.updated_at = Utc::now();
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -274,9 +386,11 @@ pub struct RequestContext {
     pub session: CapturedSession,
     pub request_headers: Vec<HeaderPair>,
     pub request_body: Vec<u8>,
+    pub request_trailers: Vec<HeaderPair>,
     pub should_mock: bool,
     pub delay_ms: Option<u64>,
     pub rewrite_request_headers: Vec<HeaderPair>,
+    pub rewrite_request_trailers: Vec<HeaderPair>,
     pub matched_rule_ids: Vec<String>,
 }
 
@@ -285,8 +399,10 @@ pub struct ResponseContext {
     pub session: CapturedSession,
     pub response_headers: Vec<HeaderPair>,
     pub response_body: Vec<u8>,
+    pub response_trailers: Vec<HeaderPair>,
     pub delay_ms: Option<u64>,
     pub rewrite_response_headers: Vec<HeaderPair>,
+    pub rewrite_response_trailers: Vec<HeaderPair>,
     pub matched_rule_ids: Vec<String>,
 }
 

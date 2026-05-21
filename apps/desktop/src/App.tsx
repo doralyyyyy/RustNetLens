@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { api } from "./api/tauri";
+import { CollectionPanel } from "./components/CollectionPanel";
 import { ProxyToolbar } from "./components/ProxyToolbar";
 import { RequestDetail } from "./components/RequestDetail";
 import { RequestTable } from "./components/RequestTable";
@@ -8,6 +9,7 @@ import { RuleEditor } from "./components/RuleEditor";
 import type {
   CapturedSession,
   ProxyStatus,
+  RequestCollection,
   Rule,
   SessionFilter,
   SessionSummary,
@@ -29,6 +31,7 @@ function App() {
   const [sessions, setSessions] = useState<SessionSummary[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [detail, setDetail] = useState<CapturedSession | null>(null);
+  const [collections, setCollections] = useState<RequestCollection[]>([]);
   const [rules, setRules] = useState<Rule[]>([]);
   const [overview, setOverview] = useState<TrafficOverview | null>(null);
   const [filter, setFilter] = useState<SessionFilter>(emptyFilter);
@@ -37,6 +40,7 @@ function App() {
 
   const loadStatus = useCallback(async () => setStatus(await api.proxyStatus()), []);
   const loadRules = useCallback(async () => setRules(await api.listRules()), []);
+  const loadCollections = useCallback(async () => setCollections(await api.listCollections()), []);
   const loadOverview = useCallback(async () => setOverview(await api.trafficOverview()), []);
   const loadSessions = useCallback(async () => setSessions(await api.listSessions(filter, 500, 0)), [filter]);
 
@@ -45,7 +49,8 @@ function App() {
     loadSessions().catch((err) => setMessage(String(err)));
     loadOverview().catch((err) => setMessage(String(err)));
     loadRules().catch((err) => setMessage(String(err)));
-  }, [loadStatus, loadOverview, loadRules, loadSessions]);
+    loadCollections().catch((err) => setMessage(String(err)));
+  }, [loadCollections, loadStatus, loadOverview, loadRules, loadSessions]);
 
   useEffect(() => {
     const unlisten = listen<SessionSummary>("session://captured", (event) => {
@@ -75,6 +80,7 @@ function App() {
   function refreshAll() {
     loadSessions().catch((err) => setMessage(String(err)));
     loadOverview().catch((err) => setMessage(String(err)));
+    loadCollections().catch((err) => setMessage(String(err)));
   }
 
   async function run(action: () => Promise<void>) {
@@ -116,6 +122,18 @@ function App() {
           const ids = selectedId ? [selectedId] : sessions.map((session) => session.id);
           const path = await api.exportSessions(ids, "har");
           setMessage(`Exported to ${path}`);
+        })}
+        onGenerateRootCa={() => run(async () => {
+          const rootCa = await api.generateRootCa();
+          setMessage(`Root CA ready at ${rootCa.cert_path}`);
+          await loadStatus();
+        })}
+        onToggleHttpsMitm={(enabled) => run(async () => {
+          const httpsMitm = await api.setHttpsMitmEnabled(enabled);
+          setMessage(httpsMitm.enabled
+            ? "HTTPS decrypt enabled for local authorized debugging"
+            : "HTTPS decrypt disabled");
+          await loadStatus();
         })}
       />
 
@@ -187,6 +205,20 @@ function App() {
 
           {message && <div className="message">{message}</div>}
           <RequestTable sessions={filteredSessions} selectedId={selectedId} onSelect={setSelectedId} />
+          <CollectionPanel
+            collections={collections}
+            busy={busy}
+            onSave={(collection) => run(async () => {
+              await api.saveCollection(collection);
+              await loadCollections();
+              setMessage(`Collection ${collection.name} saved`);
+            })}
+            onDelete={(id) => run(async () => {
+              await api.deleteCollection(id);
+              await loadCollections();
+              setMessage("Collection deleted");
+            })}
+          />
           <RuleEditor
             rules={rules}
             onRefresh={loadRules}
@@ -213,6 +245,12 @@ function App() {
           onExport={() => detail && run(async () => {
             const path = await api.exportSessions([detail.id], "har");
             setMessage(`Exported to ${path}`);
+          })}
+          collections={collections}
+          onAddToCollection={(collectionId) => detail && run(async () => {
+            await api.addSessionToCollection(collectionId, detail.id);
+            await loadCollections();
+            setMessage("Request saved to collection");
           })}
         />
       </main>
