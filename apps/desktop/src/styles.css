@@ -14,7 +14,7 @@
 * { box-sizing: border-box; }
 body {
   margin: 0;
-  min-width: 980px;
+  min-width: 0;
   min-height: 100vh;
   background:
     radial-gradient(circle at 10% 0%, rgba(102, 227, 180, 0.22), transparent 28%),
@@ -197,9 +197,10 @@ input:focus, select:focus, textarea:focus {
 
 .main-grid {
   display: grid;
-  grid-template-columns: minmax(560px, 1fr) minmax(420px, 0.88fr);
+  grid-template-columns: minmax(0, 1.08fr) minmax(0, 0.92fr);
   gap: 18px;
   margin-top: 18px;
+  align-items: start;
 }
 
 .left-panel, .detail, .rules-panel, .collections-panel {
@@ -207,6 +208,7 @@ input:focus, select:focus, textarea:focus {
   background: var(--panel);
   border-radius: 24px;
   backdrop-filter: blur(18px);
+  min-width: 0;
 }
 
 .collections-panel {
@@ -225,7 +227,7 @@ input:focus, select:focus, textarea:focus {
 
 .collection-create {
   display: grid;
-  grid-template-columns: minmax(130px, 1fr) minmax(150px, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
   gap: 8px;
 }
 
@@ -238,7 +240,7 @@ input:focus, select:focus, textarea:focus {
 .collection-card,
 .collection-save {
   display: grid;
-  grid-template-columns: minmax(180px, 1fr) auto auto;
+  grid-template-columns: minmax(0, 1fr) auto auto;
   gap: 10px;
   align-items: center;
   padding: 12px;
@@ -280,7 +282,7 @@ input:focus, select:focus, textarea:focus {
 
 .overview-metrics {
   display: grid;
-  grid-template-columns: repeat(5, 1fr);
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 8px;
 }
 
@@ -304,7 +306,7 @@ input:focus, select:focus, textarea:focus {
 
 .overview-columns {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 10px;
 }
 
@@ -327,7 +329,7 @@ input:focus, select:focus, textarea:focus {
 
 .filters {
   display: grid;
-  grid-template-columns: 1.2fr 0.55fr 0.8fr 0.55fr auto auto auto;
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 0.55fr) minmax(0, 0.8fr) minmax(0, 0.55fr) auto auto auto;
   gap: 8px;
   align-items: center;
 }
@@ -472,7 +474,7 @@ input:focus, select:focus, textarea:focus {
 
 .detail-columns {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: 12px;
 }
 
@@ -543,6 +545,22 @@ pre {
   gap: 8px;
   overflow-x: auto;
   padding: 12px 0;
+}
+
+.app-shell,
+.main-grid > *,
+.overview-panel,
+.overview-columns > *,
+.overview-list,
+.collections-panel,
+.collection-card,
+.collection-save,
+.rules-panel,
+.detail,
+.detail-columns > *,
+.filters,
+.left-panel {
+  min-width: 0;
 }
 
 .rule-list button {
